@@ -329,10 +329,12 @@ _PyEval_FiniThreads(void)
 void
 PyEval_AcquireLock(void)
 {
+  /*
     PyThreadState *tstate = PyThreadState_GET();
     if (tstate == NULL)
         Py_FatalError("PyEval_AcquireLock: current thread state is NULL");
     take_gil(tstate);
+    */
 }
 
 void
@@ -342,31 +344,38 @@ PyEval_ReleaseLock(void)
        We therefore avoid PyThreadState_GET() which dumps a fatal error
        in debug mode.
     */
+       /*
     drop_gil((PyThreadState*)_Py_atomic_load_relaxed(
         &_PyThreadState_Current));
+        */
 }
 
 void
 PyEval_AcquireThread(PyThreadState *tstate)
 {
+  #if 0
     if (tstate == NULL)
         Py_FatalError("PyEval_AcquireThread: NULL new thread state");
+
     /* Check someone has called PyEval_InitThreads() to create the lock */
     assert(gil_created());
     take_gil(tstate);
     if (PyThreadState_Swap(tstate) != NULL)
         Py_FatalError(
             "PyEval_AcquireThread: non-NULL old thread state");
+  #endif
 }
 
 void
 PyEval_ReleaseThread(PyThreadState *tstate)
 {
+  #if 0
     if (tstate == NULL)
         Py_FatalError("PyEval_ReleaseThread: NULL thread state");
     if (PyThreadState_Swap(NULL) != tstate)
         Py_FatalError("PyEval_ReleaseThread: wrong thread state");
     drop_gil(tstate);
+  #endif
 }
 
 /* This function is called from PyOS_AfterFork to destroy all threads which are
@@ -381,11 +390,13 @@ PyEval_ReInitThreads(void)
     PyObject *threading, *result;
     PyThreadState *current_tstate = PyThreadState_GET();
 
+/*
     if (!gil_created())
         return;
     recreate_gil();
+    */
     pending_lock = PyThread_allocate_lock();
-    take_gil(current_tstate);
+    // take_gil(current_tstate);
     main_thread = PyThread_get_thread_ident();
 
     /* Update the threading module with the new state.
@@ -429,6 +440,8 @@ _PyEval_SignalAsyncExc(void)
 PyThreadState *
 PyEval_SaveThread(void)
 {
+    return PyThreadState_Swap(NULL);
+#if 0
     PyThreadState *tstate = PyThreadState_Swap(NULL);
     if (tstate == NULL)
         Py_FatalError("PyEval_SaveThread: NULL tstate");
@@ -437,11 +450,13 @@ PyEval_SaveThread(void)
         drop_gil(tstate);
 #endif
     return tstate;
+#endif
 }
 
 void
 PyEval_RestoreThread(PyThreadState *tstate)
 {
+#if 0
     if (tstate == NULL)
         Py_FatalError("PyEval_RestoreThread: NULL tstate");
 #ifdef WITH_THREAD
@@ -458,6 +473,7 @@ PyEval_RestoreThread(PyThreadState *tstate)
     }
 #endif
     PyThreadState_Swap(tstate);
+#endif
 }
 
 
@@ -1262,6 +1278,7 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
                     goto error;
             }
 #ifdef WITH_THREAD
+#if 0
             if (_Py_atomic_load_relaxed(&gil_drop_request)) {
                 /* Give another thread a chance */
                 if (PyThreadState_Swap(NULL) != tstate)
@@ -1281,6 +1298,7 @@ PyEval_EvalFrameEx(PyFrameObject *f, int throwflag)
                 if (PyThreadState_Swap(tstate) != NULL)
                     Py_FatalError("ceval: orphan tstate");
             }
+#endif
 #endif
             /* Check for asynchronous exceptions. */
             if (tstate->async_exc != NULL) {

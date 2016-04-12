@@ -916,9 +916,9 @@ class SizeofTest(unittest.TestCase):
         # method-wrapper (descriptor object)
         check({}.__iter__, size('2P'))
         # dict
-        check({}, size('n2P') + calcsize('2nPn') + 8*calcsize('n2P'))
+        check({}, size('n2PiiL') + calcsize('2nPn') + 8*calcsize('n2P'))
         longdict = {1:1, 2:2, 3:3, 4:4, 5:5, 6:6, 7:7, 8:8}
-        check(longdict, size('n2P') + calcsize('2nPn') + 16*calcsize('n2P'))
+        check(longdict, size('n2PiiL') + calcsize('2nPn') + 16*calcsize('n2P'))
         # dictionary-keyview
         check({}.keys(), size('P'))
         # dictionary-valueview
@@ -1064,7 +1064,7 @@ class SizeofTest(unittest.TestCase):
         check((1,2,3), vsize('') + 3*self.P)
         # type
         # static type: PyTypeObject
-        s = vsize('P2n15Pl4Pn9Pn11PIP')
+        s = vsize('P2n15Pl4Pn9Pn11PIPPPPP')
         check(int, s)
         s = vsize('P2n15Pl4Pn9Pn11PIP'  # PyTypeObject
                   '3P'                  # PyAsyncMethods
@@ -1072,14 +1072,14 @@ class SizeofTest(unittest.TestCase):
                   '3P'                  # PyMappingMethods
                   '10P'                 # PySequenceMethods
                   '2P'                  # PyBufferProcs
-                  '4P')
+                  '4PPPPP')
         # Separate block for PyDictKeysObject with 4 entries
         s += calcsize("2nPn") + 4*calcsize("n2P")
         # class
         class newstyleclass(object): pass
         check(newstyleclass, s)
         # dict with shared keys
-        check(newstyleclass().__dict__, size('n2P' + '2nPn'))
+        check(newstyleclass().__dict__, size('n2PiiL' + '2nPn'))
         # unicode
         # each tuple contains a string and its expected character size
         # don't put any static strings here, as they may contain

@@ -324,7 +324,7 @@ _Py_InitializeEx_Private(int install_sigs, int install_importlib)
     tstate = PyThreadState_New(interp);
     if (tstate == NULL)
         Py_FatalError("Py_Initialize: can't make first thread");
-    (void) PyThreadState_Swap(tstate);
+    // (void) PyThreadState_Swap(tstate);
 
 #ifdef WITH_THREAD
     /* We can't call _PyEval_FiniThreads() in Py_FinalizeEx because
@@ -691,7 +691,7 @@ Py_FinalizeEx(void)
 #endif /* WITH_THREAD */
 
     /* Delete current thread. After this, many C API calls become crashy. */
-    PyThreadState_Swap(NULL);
+    // PyThreadState_Swap(NULL);
     PyInterpreterState_Delete(interp);
 
 #ifdef Py_TRACE_REFS
@@ -750,7 +750,7 @@ Py_NewInterpreter(void)
         return NULL;
     }
 
-    save_tstate = PyThreadState_Swap(tstate);
+    // save_tstate = PyThreadState_Swap(tstate);
 
     /* XXX The following is lax in error checking */
 
@@ -810,7 +810,7 @@ handle_error:
 
     PyErr_PrintEx(0);
     PyThreadState_Clear(tstate);
-    PyThreadState_Swap(save_tstate);
+    // PyThreadState_Swap(save_tstate);
     PyThreadState_Delete(tstate);
     PyInterpreterState_Delete(interp);
 
@@ -846,7 +846,7 @@ Py_EndInterpreter(PyThreadState *tstate)
 
     PyImport_Cleanup();
     PyInterpreterState_Clear(interp);
-    PyThreadState_Swap(NULL);
+    // PyThreadState_Swap(NULL);
     PyInterpreterState_Delete(interp);
 }
 

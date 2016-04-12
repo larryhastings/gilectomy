@@ -253,6 +253,9 @@ typedef union _gc_head {
     double dummy;  /* force worst-case alignment */
 } PyGC_Head;
 
+PyAPI_FUNC(void) gc_lock(void);
+PyAPI_FUNC(void) gc_lock2(furtex_t *);
+PyAPI_FUNC(void) gc_unlock(void);
 extern PyGC_Head *_PyGC_generation0;
 
 #define _Py_AS_GC(o) ((PyGC_Head *)(o)-1)
@@ -287,8 +290,10 @@ extern PyGC_Head *_PyGC_generation0;
 
 /* Tell the GC to track this object.  NB: While the object is tracked the
  * collector it must be safe to call the ob_traverse method. */
+#if 0
 #define _PyObject_GC_TRACK(o) do { \
     PyGC_Head *g = _Py_AS_GC(o); \
+    gc_lock(); \
     if (_PyGCHead_REFS(g) != _PyGC_REFS_UNTRACKED) \
         Py_FatalError("GC object already tracked"); \
     _PyGCHead_SET_REFS(g, _PyGC_REFS_REACHABLE); \
@@ -296,6 +301,7 @@ extern PyGC_Head *_PyGC_generation0;
     g->gc.gc_prev = _PyGC_generation0->gc.gc_prev; \
     g->gc.gc_prev->gc.gc_next = g; \
     _PyGC_generation0->gc.gc_prev = g; \
+    gc_unlock(); \
     } while (0);
 
 /* Tell the GC to stop tracking this object.
@@ -304,12 +310,22 @@ extern PyGC_Head *_PyGC_generation0;
  */
 #define _PyObject_GC_UNTRACK(o) do { \
     PyGC_Head *g = _Py_AS_GC(o); \
+    gc_lock(); \
     assert(_PyGCHead_REFS(g) != _PyGC_REFS_UNTRACKED); \
     _PyGCHead_SET_REFS(g, _PyGC_REFS_UNTRACKED); \
     g->gc.gc_prev->gc.gc_next = g->gc.gc_next; \
     g->gc.gc_next->gc.gc_prev = g->gc.gc_prev; \
     g->gc.gc_next = NULL; \
+    gc_unlock(); \
     } while (0);
+
+#else
+
+#define _PyObject_GC_TRACK(o)
+    
+#define _PyObject_GC_UNTRACK(o)
+
+#endif
 
 /* True if the object is currently tracked by the GC. */
 #define _PyObject_GC_IS_TRACKED(o) \
@@ -320,6 +336,7 @@ extern PyGC_Head *_PyGC_generation0;
 #define _PyObject_GC_MAY_BE_TRACKED(obj) \
     (PyObject_IS_GC(obj) && \
         (!PyTuple_CheckExact(obj) || _PyObject_GC_IS_TRACKED(obj)))
+
 #endif /* Py_LIMITED_API */
 
 PyAPI_FUNC(PyObject *) _PyObject_GC_Malloc(size_t size);

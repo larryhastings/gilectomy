@@ -3,13 +3,21 @@
 
 #include "Python.h"
 
+/*
 #define GET_TSTATE() \
     ((PyThreadState*)_Py_atomic_load_relaxed(&_PyThreadState_Current))
 #define SET_TSTATE(value) \
     _Py_atomic_store_relaxed(&_PyThreadState_Current, (Py_uintptr_t)(value))
 #define GET_INTERP_STATE() \
     (GET_TSTATE()->interp)
+*/
 
+#define GET_TSTATE() \
+    PyThreadState_GET()
+#define SET_TSTATE(value)
+
+#define GET_INTERP_STATE() \
+    (GET_TSTATE()->interp)
 
 /* --------------------------------------------------------------------------
 CAUTION
@@ -498,18 +506,22 @@ _PyThreadState_DeleteExcept(PyThreadState *tstate)
 PyThreadState *
 _PyThreadState_UncheckedGet(void)
 {
-    return GET_TSTATE();
+    return PyGILState_GetThisThreadState();
+    /* return GET_TSTATE(); */
 }
 
 
 PyThreadState *
 PyThreadState_Get(void)
 {
+    return PyGILState_GetThisThreadState();
+    /*
     PyThreadState *tstate = GET_TSTATE();
     if (tstate == NULL)
         Py_FatalError("PyThreadState_Get: no current thread");
 
     return tstate;
+    */
 }
 
 
@@ -517,6 +529,7 @@ PyThreadState *
 PyThreadState_Swap(PyThreadState *newts)
 {
     PyThreadState *oldts = GET_TSTATE();
+    return oldts;
 
     SET_TSTATE(newts);
     /* It should not be possible for more than one thread state
@@ -784,8 +797,10 @@ PyGILState_GetThisThreadState(void)
 int
 PyGILState_Check(void)
 {
-    PyThreadState *tstate = GET_TSTATE();
+    return 1;
+    /*PyThreadState *tstate = GET_TSTATE();
     return tstate && (tstate == PyGILState_GetThisThreadState());
+    */
 }
 
 PyGILState_STATE

@@ -9,6 +9,10 @@
 
 #define OFF(x) offsetof(PyFrameObject, x)
 
+static furtex_t module_furtex = {0, 0, 0};
+#define module_lock() furtex_lock(&module_furtex)
+#define module_unlock() furtex_unlock(&module_furtex)
+
 static PyMemberDef frame_memberlist[] = {
     {"f_back",          T_OBJECT,       OFF(f_back),      READONLY},
     {"f_code",          T_OBJECT,       OFF(f_code),      READONLY},
@@ -444,15 +448,31 @@ frame_dealloc(PyFrameObject *f)
     Py_CLEAR(f->f_exc_traceback);
 
     co = f->f_code;
-    if (co->co_zombieframe == NULL)
+    /*
+    TODO HACK
+    DISABLED FOR NOW
+    this causes crashes
+    must be a race condition
+    I can live without the optimization for now
+    if (co->co_zombieframe == NULL) {
+        Py_ssize_t refs = _PyGCHead_REFS(_Py_AS_GC(f));
         co->co_zombieframe = f;
-    else if (numfree < PyFrame_MAXFREELIST) {
-        ++numfree;
-        f->f_back = free_list;
-        free_list = f;
     }
     else
-        PyObject_GC_Del(f);
+    */
+    {
+        module_lock();
+        if (numfree < PyFrame_MAXFREELIST) {
+            ++numfree;
+            f->f_back = free_list;
+            free_list = f;
+            module_unlock();
+        }
+        else {
+            module_unlock();
+            PyObject_GC_Del(f);
+        }
+    }
 
     Py_DECREF(co);
     Py_TRASHCAN_SAFE_END(f)
@@ -619,6 +639,7 @@ PyFrame_New(PyThreadState *tstate, PyCodeObject *code, PyObject *globals,
     PyFrameObject *f;
     PyObject *builtins;
     Py_ssize_t i;
+    char *f_from = "unknown!";
 
 #ifdef Py_DEBUG
     if (code == NULL || globals == NULL || !PyDict_Check(globals) ||
@@ -656,6 +677,7 @@ PyFrame_New(PyThreadState *tstate, PyCodeObject *code, PyObject *globals,
         Py_INCREF(builtins);
     }
     if (code->co_zombieframe != NULL) {
+        f_from = "zombie frame";
         f = code->co_zombieframe;
         code->co_zombieframe = NULL;
         _Py_NewReference((PyObject *)f);
@@ -667,7 +689,10 @@ PyFrame_New(PyThreadState *tstate, PyCodeObject *code, PyObject *globals,
         nfrees = PyTuple_GET_SIZE(code->co_freevars);
         extras = code->co_stacksize + code->co_nlocals + ncells +
             nfrees;
+        module_lock();
         if (free_list == NULL) {
+            module_unlock();
+            f_from = "PyObject_GC_NewVar";
             f = PyObject_GC_NewVar(PyFrameObject, &PyFrame_Type,
             extras);
             if (f == NULL) {
@@ -678,8 +703,10 @@ PyFrame_New(PyThreadState *tstate, PyCodeObject *code, PyObject *globals,
         else {
             assert(numfree > 0);
             --numfree;
+            f_from = "freelist";
             f = free_list;
             free_list = free_list->f_back;
+            module_unlock();
             if (Py_SIZE(f) < extras) {
                 PyFrameObject *new_f = PyObject_GC_Resize(PyFrameObject, f, extras);
                 if (new_f == NULL) {
@@ -688,6 +715,7 @@ PyFrame_New(PyThreadState *tstate, PyCodeObject *code, PyObject *globals,
                     return NULL;
                 }
                 f = new_f;
+                f_from = "PyObject_GC_Resize";
             }
             _Py_NewReference((PyObject *)f);
         }
@@ -976,15 +1004,20 @@ PyFrame_LocalsToFast(PyFrameObject *f, int clear)
 int
 PyFrame_ClearFreeList(void)
 {
-    int freelist_size = numfree;
+    int freelist_size;
 
+    module_lock();
+    freelist_size = numfree;
     while (free_list != NULL) {
         PyFrameObject *f = free_list;
         free_list = free_list->f_back;
+        module_unlock();
         PyObject_GC_Del(f);
+        module_lock();
         --numfree;
     }
     assert(numfree == 0);
+    module_unlock();
     return freelist_size;
 }
 

@@ -10,6 +10,10 @@
 #include <float.h>
 
 
+static furtex_t module_furtex = {0, 0, 0};
+#define module_lock() furtex_lock(&module_furtex)
+#define module_unlock() furtex_unlock(&module_furtex)
+
 /* Special free list
    free_list is a singly-linked list of available PyFloatObjects, linked
    via abuse of their ob_type members.
@@ -109,11 +113,15 @@ PyFloat_GetInfo(void)
 PyObject *
 PyFloat_FromDouble(double fval)
 {
-    PyFloatObject *op = free_list;
+    PyFloatObject *op;
+    module_lock();
+    op = free_list;
     if (op != NULL) {
         free_list = (PyFloatObject *) Py_TYPE(op);
         numfree--;
+        module_unlock();
     } else {
+        module_unlock();
         op = (PyFloatObject*) PyObject_MALLOC(sizeof(PyFloatObject));
         if (!op)
             return PyErr_NoMemory();
@@ -198,17 +206,22 @@ PyFloat_FromString(PyObject *v)
 static void
 float_dealloc(PyFloatObject *op)
 {
+    module_lock();
     if (PyFloat_CheckExact(op)) {
         if (numfree >= PyFloat_MAXFREELIST)  {
+            module_unlock();
             PyObject_FREE(op);
             return;
         }
         numfree++;
         Py_TYPE(op) = (struct _typeobject *)free_list;
         free_list = op;
+        module_unlock();
     }
-    else
+    else {
+        module_unlock();
         Py_TYPE(op)->tp_free((PyObject *)op);
+    }
 }
 
 double
@@ -1933,8 +1946,11 @@ _PyFloat_Init(void)
 int
 PyFloat_ClearFreeList(void)
 {
-    PyFloatObject *f = free_list, *next;
-    int i = numfree;
+    PyFloatObject *f, *next;
+    int i;
+    module_lock();
+    f = free_list;
+    i = numfree;
     while (f) {
         next = (PyFloatObject*) Py_TYPE(f);
         PyObject_FREE(f);
@@ -1942,6 +1958,7 @@ PyFloat_ClearFreeList(void)
     }
     free_list = NULL;
     numfree = 0;
+    module_unlock();
     return i;
 }
 
@@ -1955,9 +1972,11 @@ PyFloat_Fini(void)
 void
 _PyFloat_DebugMallocStats(FILE *out)
 {
+    module_lock();
     _PyDebugAllocatorStats(out,
                            "free PyFloatObject",
                            numfree, sizeof(PyFloatObject));
+    module_unlock();
 }
 
 

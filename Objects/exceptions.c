@@ -10,6 +10,11 @@
 #include "osdefs.h"
 
 
+static furtex_t module_furtex = {0, 0, 0};
+#define module_lock() furtex_lock(&module_furtex)
+#define module_unlock() furtex_unlock(&module_furtex)
+
+
 /* Compatibility aliases */
 PyObject *PyExc_EnvironmentError = NULL;
 PyObject *PyExc_IOError = NULL;
@@ -2213,8 +2218,10 @@ MemoryError_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     /* This shouldn't happen since the empty tuple is persistent */
     if (self->args == NULL)
         return NULL;
+    module_lock();
     memerrors_freelist = (PyBaseExceptionObject *) self->dict;
     memerrors_numfree--;
+    module_unlock();
     self->dict = NULL;
     _Py_NewReference((PyObject *)self);
     _PyObject_GC_TRACK(self);
@@ -2226,12 +2233,15 @@ MemoryError_dealloc(PyBaseExceptionObject *self)
 {
     _PyObject_GC_UNTRACK(self);
     BaseException_clear(self);
-    if (memerrors_numfree >= MEMERRORS_SAVE)
+    module_lock();
+    if (memerrors_numfree >= MEMERRORS_SAVE) {
+        module_unlock();
         Py_TYPE(self)->tp_free((PyObject *)self);
-    else {
+    } else {
         self->dict = (PyObject *) memerrors_freelist;
         memerrors_freelist = self;
         memerrors_numfree++;
+        module_unlock();
     }
 }
 
@@ -2256,11 +2266,18 @@ preallocate_memerrors(void)
 static void
 free_preallocated_memerrors(void)
 {
-    while (memerrors_freelist != NULL) {
-        PyObject *self = (PyObject *) memerrors_freelist;
+    for (;;) {
+        PyObject *self;
+        module_lock();
+        if (memerrors_freelist == NULL)
+            break;
+        self = (PyObject *) memerrors_freelist;
         memerrors_freelist = (PyBaseExceptionObject *) memerrors_freelist->dict;
+        module_unlock();
         Py_TYPE(self)->tp_free((PyObject *)self);
     }
+    memerrors_numfree = 0;
+    module_unlock();
 }
 
 

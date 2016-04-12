@@ -503,15 +503,16 @@ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx*/
                                             void **buffer,
                                             Py_ssize_t *buffer_len);
 
-       /*
-      Takes an arbitrary object which must support the (writable,
-      single segment) buffer interface and returns a pointer to a
-      writable memory location in buffer of size buffer_len.
+     /*
+     Lock or unlock an object.  Locking and unlocking always succeeds.
 
-      0 is returned on success.  buffer and buffer_len are only
-      set in case no error occurs. Otherwise, -1 is returned and
-      an exception set.
-       */
+     If the object does not support locking no exception is set.
+     */
+
+     PyAPI_FUNC(void) PyObject_Lock(PyObject *obj);
+     PyAPI_FUNC(void) PyObject_Unlock(PyObject *obj);
+     PyAPI_FUNC(void) PyObject_Lock2(PyObject *o1, PyObject *o2);
+     PyAPI_FUNC(void) PyObject_Unlock2(PyObject *o1, PyObject *o2);
 
     /* new buffer API */
 

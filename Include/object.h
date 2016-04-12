@@ -82,6 +82,99 @@ whose size is determined when the object is allocated.
 /* PyObject_HEAD defines the initial segment of every PyObject. */
 #define PyObject_HEAD                   PyObject ob_base;
 
+
+/*
+** futex
+**
+** linux-specific fast userspace lock
+*/
+
+#include <errno.h>
+#include <linux/futex.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/mman.h>
+#include <sys/syscall.h>
+#include <sys/time.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <pyport.h>
+
+Py_LOCAL_INLINE(int) futex(int *uaddr, int futex_op, int val,
+    const struct timespec *timeout, int *uaddr2, int val3) {
+    return syscall(SYS_futex, uaddr, futex_op, val,
+        timeout, uaddr, val3);
+   }
+
+#define futex_wait(i_ptr, value) \
+    (futex(i_ptr, FUTEX_WAIT, value, NULL, NULL, 0))
+
+#define futex_wake(i_ptr, value) \
+    (futex(i_ptr, FUTEX_WAKE, value, NULL, NULL, 0))
+
+Py_LOCAL_INLINE(void) futex_init(int *f) {
+    *f = 0;
+}
+
+Py_LOCAL_INLINE(void) futex_lock(int *f) {
+    int current = __sync_val_compare_and_swap(f, 0, 1);
+    if (current == 0)
+        return;
+    if (current != 2)
+        current = __sync_lock_test_and_set(f, 2);
+    while (current != 0) {
+        futex_wait(f, 2);
+        current = __sync_lock_test_and_set(f, 2);
+    }
+}
+
+Py_LOCAL_INLINE(void) futex_unlock(int *f) {
+    if (__sync_fetch_and_sub(f, 1) != 1) {
+        *f = 0;
+        futex_wake(f, 1);
+    }
+}
+
+
+/*
+** furtex
+**
+** recursive futex lock
+*/
+typedef struct {
+    int futex;
+    int count;
+    pthread_t tid;
+} furtex_t;
+
+Py_LOCAL_INLINE(void) furtex_init(furtex_t *f) {
+    f->futex = f->count = 0;
+    f->tid = 0;
+}
+
+Py_LOCAL_INLINE(void) furtex_lock(furtex_t *f) {
+    pthread_t tid = pthread_self();
+    if (f->count && pthread_equal(f->tid, tid)) {
+        f->count++;
+        assert(f->count > 1);
+        return;
+    }
+    futex_lock(&(f->futex));
+    f->tid = tid;
+    assert(f->count == 0);
+    f->count = 1;
+}
+
+Py_LOCAL_INLINE(void) furtex_unlock(furtex_t *f) {
+    /* this function assumes we own the lock! */
+    assert(f->count > 0);
+    if (--f->count)
+        return;
+    futex_unlock(&(f->futex));
+}
+
+
 #define PyObject_HEAD_INIT(type)        \
     { _PyObject_EXTRA_INIT              \
     1, type },
@@ -173,6 +266,7 @@ typedef PyObject *(*ssizessizeargfunc)(PyObject *, Py_ssize_t, Py_ssize_t);
 typedef int(*ssizeobjargproc)(PyObject *, Py_ssize_t, PyObject *);
 typedef int(*ssizessizeobjargproc)(PyObject *, Py_ssize_t, Py_ssize_t, PyObject *);
 typedef int(*objobjargproc)(PyObject *, PyObject *, PyObject *);
+typedef void (*lockfunc)(PyObject *);
 
 #ifndef Py_LIMITED_API
 /* buffer interface */
@@ -420,6 +514,9 @@ typedef struct _typeobject {
     unsigned int tp_version_tag;
 
     destructor tp_finalize;
+
+    lockfunc tp_lock;
+    lockfunc tp_unlock;
 
 #ifdef COUNT_ALLOCS
     /* these must be last and never explicitly initialized */
@@ -776,13 +873,13 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
 
 #define Py_INCREF(op) (                         \
     _Py_INC_REFTOTAL  _Py_REF_DEBUG_COMMA       \
-    ((PyObject *)(op))->ob_refcnt++)
+    __sync_fetch_and_add(&(((PyObject *)(op))->ob_refcnt), 1) )
 
 #define Py_DECREF(op)                                   \
     do {                                                \
         PyObject *_py_decref_tmp = (PyObject *)(op);    \
         if (_Py_DEC_REFTOTAL  _Py_REF_DEBUG_COMMA       \
-        --(_py_decref_tmp)->ob_refcnt != 0)             \
+        __sync_sub_and_fetch(&(_py_decref_tmp->ob_refcnt),1) != 0)             \
             _Py_CHECK_REFCNT(_py_decref_tmp)            \
         else                                            \
         _Py_Dealloc(_py_decref_tmp);                    \

@@ -12,6 +12,10 @@
 #define PyTuple_MAXFREELIST  2000  /* Maximum number of tuples of each size to save */
 #endif
 
+static furtex_t module_furtex = {0, 0, 0};
+#define module_lock() furtex_lock(&module_furtex)
+#define module_unlock() furtex_unlock(&module_furtex)
+#define module_gc_lock() gc_lock2(&module_furtex)
 #if PyTuple_MAXSAVESIZE > 0
 /* Entries 1 up to PyTuple_MAXSAVESIZE are free lists, entry 0 is the empty
    tuple () of which at most one instance will be allocated.
@@ -36,12 +40,14 @@ static Py_ssize_t count_tracked = 0;
 static void
 show_track(void)
 {
+    module_lock();
     fprintf(stderr, "Tuples created: %" PY_FORMAT_SIZE_T "d\n",
         count_tracked + count_untracked);
     fprintf(stderr, "Tuples tracked by the GC: %" PY_FORMAT_SIZE_T
         "d\n", count_tracked);
     fprintf(stderr, "%.2f%% tuple tracking rate\n\n",
         (100.0*count_tracked/(count_untracked+count_tracked)));
+    module_unlock();
 }
 #endif
 
@@ -52,6 +58,7 @@ _PyTuple_DebugMallocStats(FILE *out)
 #if PyTuple_MAXSAVESIZE > 0
     int i;
     char buf[128];
+    module_lock();
     for (i = 1; i < PyTuple_MAXSAVESIZE; i++) {
         PyOS_snprintf(buf, sizeof(buf),
                       "free %d-sized PyTupleObject", i);
@@ -59,6 +66,7 @@ _PyTuple_DebugMallocStats(FILE *out)
                                buf,
                                numfree[i], _PyObject_VAR_SIZE(&PyTuple_Type, i));
     }
+    module_unlock();
 #endif
 }
 
@@ -72,12 +80,14 @@ PyTuple_New(Py_ssize_t size)
         return NULL;
     }
 #if PyTuple_MAXSAVESIZE > 0
+    module_lock();
     if (size == 0 && free_list[0]) {
         op = free_list[0];
         Py_INCREF(op);
 #ifdef COUNT_ALLOCS
         tuple_zero_allocs++;
 #endif
+        module_unlock();
         return (PyObject *) op;
     }
     if (size < PyTuple_MAXSAVESIZE && (op = free_list[size]) != NULL) {
@@ -86,6 +96,7 @@ PyTuple_New(Py_ssize_t size)
 #ifdef COUNT_ALLOCS
         fast_tuple_allocs++;
 #endif
+        module_unlock();
         /* Inline PyObject_InitVar */
 #ifdef Py_TRACE_REFS
         Py_SIZE(op) = size;
@@ -96,26 +107,32 @@ PyTuple_New(Py_ssize_t size)
     else
 #endif
     {
+        module_unlock();
         /* Check for overflow */
         if ((size_t)size > ((size_t)PY_SSIZE_T_MAX - sizeof(PyTupleObject) -
                     sizeof(PyObject *)) / sizeof(PyObject *)) {
             return PyErr_NoMemory();
         }
         op = PyObject_GC_NewVar(PyTupleObject, &PyTuple_Type, size);
-        if (op == NULL)
+        if (op == NULL) {
             return NULL;
+        }
     }
     for (i=0; i < size; i++)
         op->ob_item[i] = NULL;
 #if PyTuple_MAXSAVESIZE > 0
     if (size == 0) {
+        module_lock();
         free_list[0] = op;
         ++numfree[0];
+        module_unlock();
         Py_INCREF(op);          /* extra INCREF so that this is never freed */
     }
 #endif
 #ifdef SHOW_TRACK_COUNT
+    module_lock();
     count_tracked++;
+    module_unlock();
 #endif
     _PyObject_GC_TRACK(op);
     return (PyObject *) op;
@@ -186,8 +203,10 @@ _PyTuple_MaybeUntrack(PyObject *op)
             return;
     }
 #ifdef SHOW_TRACK_COUNT
+    module_lock();
     count_tracked--;
     count_untracked++;
+    module_unlock();
 #endif
     _PyObject_GC_UNTRACK(op);
 }
@@ -232,6 +251,7 @@ tupledealloc(PyTupleObject *op)
         while (--i >= 0)
             Py_XDECREF(op->ob_item[i]);
 #if PyTuple_MAXSAVESIZE > 0
+        module_lock();
         if (len < PyTuple_MAXSAVESIZE &&
             numfree[len] < PyTuple_MAXFREELIST &&
             Py_TYPE(op) == &PyTuple_Type)
@@ -239,8 +259,10 @@ tupledealloc(PyTupleObject *op)
             op->ob_item[0] = (PyObject *) free_list[len];
             numfree[len]++;
             free_list[len] = op;
+            module_unlock();
             goto done; /* return */
         }
+        module_unlock();
 #endif
     }
     Py_TYPE(op)->tp_free((PyObject *)op);
@@ -890,10 +912,12 @@ PyTuple_ClearFreeList(void)
     int i;
     for (i = 1; i < PyTuple_MAXSAVESIZE; i++) {
         PyTupleObject *p, *q;
+        module_gc_lock();
         p = free_list[i];
         freelist_size += numfree[i];
         free_list[i] = NULL;
         numfree[i] = 0;
+        module_unlock();
         while (p) {
             q = p;
             p = (PyTupleObject *)(p->ob_item[0]);
@@ -910,7 +934,9 @@ PyTuple_Fini(void)
 #if PyTuple_MAXSAVESIZE > 0
     /* empty tuples are used all over the place and applications may
      * rely on the fact that an empty tuple is a singleton. */
+    module_lock();
     Py_CLEAR(free_list[0]);
+    module_unlock();
 
     (void)PyTuple_ClearFreeList();
 #endif

@@ -4,6 +4,11 @@
 #include "Python.h"
 #include "structmember.h"
 
+static furtex_t module_furtex = {0, 0, 0};
+#define module_lock() furtex_lock(&module_furtex)
+#define module_gc_lock() gc_lock2(&module_furtex)
+#define module_unlock() furtex_unlock(&module_furtex)
+
 /* Free list for method objects to safe malloc/free overhead
  * The m_self element is used to chain the objects.
  */
@@ -26,13 +31,16 @@ PyObject *
 PyCFunction_NewEx(PyMethodDef *ml, PyObject *self, PyObject *module)
 {
     PyCFunctionObject *op;
+    module_lock();
     op = free_list;
     if (op != NULL) {
         free_list = (PyCFunctionObject *)(op->m_self);
         (void)PyObject_INIT(op, &PyCFunction_Type);
         numfree--;
+        module_unlock();
     }
     else {
+        module_unlock();
         op = PyObject_GC_New(PyCFunctionObject, &PyCFunction_Type);
         if (op == NULL)
             return NULL;
@@ -156,12 +164,15 @@ meth_dealloc(PyCFunctionObject *m)
     }
     Py_XDECREF(m->m_self);
     Py_XDECREF(m->m_module);
+    module_lock();
     if (numfree < PyCFunction_MAXFREELIST) {
         m->m_self = (PyObject *)free_list;
         free_list = m;
         numfree++;
+        module_unlock();
     }
     else {
+        module_unlock();
         PyObject_GC_Del(m);
     }
 }
@@ -374,8 +385,10 @@ PyTypeObject PyCFunction_Type = {
 int
 PyCFunction_ClearFreeList(void)
 {
-    int freelist_size = numfree;
+    int freelist_size;
 
+    module_gc_lock();
+    freelist_size = numfree;
     while (free_list) {
         PyCFunctionObject *v = free_list;
         free_list = (PyCFunctionObject *)(v->m_self);
@@ -383,6 +396,8 @@ PyCFunction_ClearFreeList(void)
         numfree--;
     }
     assert(numfree == 0);
+    gc_unlock();
+    module_unlock();
     return freelist_size;
 }
 
@@ -396,7 +411,9 @@ PyCFunction_Fini(void)
 void
 _PyCFunction_DebugMallocStats(FILE *out)
 {
+    module_lock();
     _PyDebugAllocatorStats(out,
                            "free PyCFunctionObject",
                            numfree, sizeof(PyCFunctionObject));
+    module_unlock();
 }
