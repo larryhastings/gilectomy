@@ -146,8 +146,9 @@ _Py_bytes_islower(const char *cptr, Py_ssize_t len)
     e = p + len;
     cased = 0;
     for (; p < e; p++) {
-        if (Py_ISUPPER(*p))
+        if (Py_ISUPPER(*p)) {
             Py_RETURN_FALSE;
+        }
         else if (!cased && Py_ISLOWER(*p))
             cased = 1;
     }
@@ -180,8 +181,9 @@ _Py_bytes_isupper(const char *cptr, Py_ssize_t len)
     e = p + len;
     cased = 0;
     for (; p < e; p++) {
-        if (Py_ISLOWER(*p))
+        if (Py_ISLOWER(*p)) {
             Py_RETURN_FALSE;
+        }
         else if (!cased && Py_ISUPPER(*p))
             cased = 1;
     }

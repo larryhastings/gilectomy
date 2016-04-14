@@ -1585,7 +1585,7 @@ static struct PyModuleDef gcmodule = {
     NULL               /* m_free */
 };
 
-static furtex_t gc_furtex = { 0, 0, 0 };
+static furtex_t gc_furtex = { 0, 0, 0, "gc_lock" };
 
 void gc_lock(void)
 {
@@ -1610,6 +1610,7 @@ PyMODINIT_FUNC
 PyInit_gc(void)
 {
     PyObject *m;
+
 
     m = PyModule_Create(&gcmodule);
 
@@ -1643,6 +1644,9 @@ PyInit_gc(void)
         gc_unlock();
         return NULL;
     }
+
+    printf("gc_furtex description %s\n", gc_furtex.description);
+    furtex_stats(&gc_furtex);
 
 #define ADD_INT(NAME) if (PyModule_AddIntConstant(m, #NAME, NAME) < 0) return NULL
     ADD_INT(DEBUG_STATS);
@@ -1736,6 +1740,8 @@ void
 _PyGC_Fini(void)
 {
     Py_CLEAR(callbacks);
+    printf("gc_furtex description %s\n", gc_furtex.description);
+    furtex_stats(&gc_furtex);
 }
 
 /* for debugging */

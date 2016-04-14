@@ -43,6 +43,9 @@ _Py_IDENTIFIER(stderr);
 extern "C" {
 #endif
 
+uint64_t total_refcount_time = 0;
+uint64_t total_refcounts = 0;
+
 extern wchar_t *Py_GetPath(void);
 
 extern grammar _PyParser_Grammar; /* From graminit.c */
@@ -549,6 +552,24 @@ Py_FinalizeEx(void)
     tstate = PyThreadState_GET();
     interp = tstate->interp;
 
+    furtex_stats(&(((PyDictObject *)interp->builtins)->ma_lock));
+    {
+    extern void frameobject_lock_stats(void);
+    extern void tupleobject_lock_stats(void);
+    extern void listobject_lock_stats(void);
+    extern void dictobject_lock_stats(void);
+    extern furtex_t _malloc_lock;
+    dictobject_lock_stats();
+    listobject_lock_stats();
+    tupleobject_lock_stats();
+    frameobject_lock_stats();
+    furtex_stats(&_malloc_lock);
+    }
+    printf("%lu total_refcounts\n", total_refcounts);
+    printf("%lu total_refcount_time\n", total_refcount_time);
+    printf("%f total_refcount_time in seconds\n", total_refcount_time / 2600000000.0);
+    printf("%f average time in refcount\n", ((double)total_refcount_time) / total_refcounts);
+
     /* Remaining threads (e.g. daemon threads) will automatically exit
        after taking the GIL (in PyEval_RestoreThread()). */
     _Py_Finalizing = tstate;
@@ -734,7 +755,8 @@ PyThreadState *
 Py_NewInterpreter(void)
 {
     PyInterpreterState *interp;
-    PyThreadState *tstate, *save_tstate;
+    PyThreadState *tstate;
+    // PyThreadState *save_tstate;
     PyObject *bimod, *sysmod;
 
     if (!initialized)
@@ -833,6 +855,8 @@ void
 Py_EndInterpreter(PyThreadState *tstate)
 {
     PyInterpreterState *interp = tstate->interp;
+
+    furtex_stats(&(((PyDictObject *)interp->builtins)->ma_lock));
 
     if (tstate != PyThreadState_GET())
         Py_FatalError("Py_EndInterpreter: thread is not current");

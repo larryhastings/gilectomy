@@ -9,9 +9,13 @@
 
 #define OFF(x) offsetof(PyFrameObject, x)
 
-static furtex_t module_furtex = {0, 0, 0};
+static furtex_t module_furtex = {0, 0, 0, "frameobject module lock"};
 #define module_lock() furtex_lock(&module_furtex)
 #define module_unlock() furtex_unlock(&module_furtex)
+
+void frameobject_lock_stats(void) {
+    furtex_stats(&module_furtex);
+}
 
 static PyMemberDef frame_memberlist[] = {
     {"f_back",          T_OBJECT,       OFF(f_back),      READONLY},
@@ -417,7 +421,7 @@ static PyGetSetDef frame_getsetlist[] = {
 static PyFrameObject *free_list = NULL;
 static int numfree = 0;         /* number of frames currently in free_list */
 /* max value for numfree */
-#define PyFrame_MAXFREELIST 200
+// #define PyFrame_MAXFREELIST 200
 
 static void
 frame_dealloc(PyFrameObject *f)
@@ -451,7 +455,7 @@ frame_dealloc(PyFrameObject *f)
     /*
     TODO HACK
     DISABLED FOR NOW
-    this causes crashes
+    this causes "GC object already tracked" problems
     must be a race condition
     I can live without the optimization for now
     if (co->co_zombieframe == NULL) {
@@ -460,20 +464,7 @@ frame_dealloc(PyFrameObject *f)
     }
     else
     */
-    {
-        module_lock();
-        if (numfree < PyFrame_MAXFREELIST) {
-            ++numfree;
-            f->f_back = free_list;
-            free_list = f;
-            module_unlock();
-        }
-        else {
-            module_unlock();
-            PyObject_GC_Del(f);
-        }
-    }
-
+    PyThreadState_FrameFreeListFree(PyThreadState_GET(), f);
     Py_DECREF(co);
     Py_TRASHCAN_SAFE_END(f)
 }
@@ -689,24 +680,18 @@ PyFrame_New(PyThreadState *tstate, PyCodeObject *code, PyObject *globals,
         nfrees = PyTuple_GET_SIZE(code->co_freevars);
         extras = code->co_stacksize + code->co_nlocals + ncells +
             nfrees;
-        module_lock();
-        if (free_list == NULL) {
-            module_unlock();
+        f = PyThreadState_FrameFreeListAlloc(tstate);
+        if (f == NULL) {
             f_from = "PyObject_GC_NewVar";
             f = PyObject_GC_NewVar(PyFrameObject, &PyFrame_Type,
-            extras);
+                extras);
             if (f == NULL) {
                 Py_DECREF(builtins);
                 return NULL;
             }
         }
         else {
-            assert(numfree > 0);
-            --numfree;
             f_from = "freelist";
-            f = free_list;
-            free_list = free_list->f_back;
-            module_unlock();
             if (Py_SIZE(f) < extras) {
                 PyFrameObject *new_f = PyObject_GC_Resize(PyFrameObject, f, extras);
                 if (new_f == NULL) {
@@ -733,6 +718,7 @@ PyFrame_New(PyThreadState *tstate, PyCodeObject *code, PyObject *globals,
     f->f_builtins = builtins;
     Py_XINCREF(back);
     f->f_back = back;
+    f->f_tstate = tstate;
     Py_INCREF(code);
     Py_INCREF(globals);
     f->f_globals = globals;

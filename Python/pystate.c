@@ -3,6 +3,8 @@
 
 #include "Python.h"
 
+#include <frameobject.h>
+
 /*
 #define GET_TSTATE() \
     ((PyThreadState*)_Py_atomic_load_relaxed(&_PyThreadState_Current))
@@ -227,6 +229,8 @@ new_threadstate(PyInterpreterState *interp, int init)
         tstate->trash_delete_later = NULL;
         tstate->on_delete = NULL;
         tstate->on_delete_data = NULL;
+        tstate->frame_freelist = NULL;
+        tstate->frame_freelist_count = 0;
 
         tstate->coroutine_wrapper = NULL;
         tstate->in_coroutine_wrapper = 0;
@@ -382,6 +386,47 @@ _PyState_ClearModules(void)
     }
 }
 
+/*
+the frame freelist abuses the pyobject header:
+  * ob_refcnt contains the # of objects in the freelist (including this one)
+  * ob_type points to the next object in the freelist
+*/
+
+void PyThreadState_FrameFreeListFree(PyThreadState *tstate, struct _frame *o) {
+    if (tstate->frame_freelist_count >= PyFrame_MAXFREELIST) {
+        PyObject_GC_Del(o);
+        return;
+    }
+
+    assert(o->ob_base.ob_base.ob_type == &PyFrame_Type);
+    tstate->frame_freelist_count++;
+    o->ob_base.ob_base.ob_type = (PyTypeObject *)tstate->frame_freelist;
+    tstate->frame_freelist = o;
+}
+
+
+struct _frame *PyThreadState_FrameFreeListAlloc(PyThreadState *tstate) {
+    struct _frame *f = tstate->frame_freelist;
+    if (!f)
+        return NULL;
+
+    tstate->frame_freelist_count--;
+    tstate->frame_freelist = (struct _frame *)f->ob_base.ob_base.ob_type;
+    f->ob_base.ob_base.ob_type = &PyFrame_Type;
+    return f;
+}
+
+void
+PyThreadState_FrameFreeListClear(PyThreadState *tstate)
+{
+    for (;;) {
+        struct _frame *f = PyThreadState_FrameFreeListAlloc(tstate);
+        if (!f)
+            break;
+        PyObject_GC_Del(f);
+    }
+}
+
 void
 PyThreadState_Clear(PyThreadState *tstate)
 {
@@ -421,6 +466,7 @@ tstate_delete_common(PyThreadState *tstate)
     interp = tstate->interp;
     if (interp == NULL)
         Py_FatalError("PyThreadState_Delete: NULL interp");
+    PyThreadState_FrameFreeListClear(tstate);
     HEAD_LOCK();
     if (tstate->prev)
         tstate->prev->next = tstate->next;

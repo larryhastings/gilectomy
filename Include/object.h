@@ -100,6 +100,8 @@ whose size is determined when the object is allocated.
 #include <sys/wait.h>
 #include <unistd.h>
 #include <pyport.h>
+#include <inttypes.h>
+#include <x86intrin.h>
 
 Py_LOCAL_INLINE(int) futex(int *uaddr, int futex_op, int val,
     const struct timespec *timeout, int *uaddr2, int val3) {
@@ -142,25 +144,43 @@ Py_LOCAL_INLINE(void) futex_unlock(int *f) {
 **
 ** recursive futex lock
 */
+#define PyMAX(a, b) ((a)>(b)?(a):(b))
+#define PyMIN(a, b) ((a)<(b)?(a):(b))
+
 typedef struct {
     int futex;
     int count;
     pthread_t tid;
+    char *description;
+    uint64_t no_contention_count;
+    uint64_t contention_count;
+    uint64_t contention_total_delay;
+    uint64_t contention_max_delta;
 } furtex_t;
 
 Py_LOCAL_INLINE(void) furtex_init(furtex_t *f) {
-    f->futex = f->count = 0;
-    f->tid = 0;
+    memset(f, 0, sizeof(*f));
 }
 
 Py_LOCAL_INLINE(void) furtex_lock(furtex_t *f) {
     pthread_t tid = pthread_self();
+    uint64_t start, delta;
+    unsigned int _;
     if (f->count && pthread_equal(f->tid, tid)) {
         f->count++;
         assert(f->count > 1);
         return;
     }
+    start = __rdtscp(&_);
     futex_lock(&(f->futex));
+    delta = __rdtscp(&_) - start;
+    if (delta <= 250)
+        f->no_contention_count++;
+    else {
+        f->contention_count++;
+        f->contention_total_delay += delta;
+        f->contention_max_delta = PyMAX(f->contention_max_delta, delta);
+    }
     f->tid = tid;
     assert(f->count == 0);
     f->count = 1;
@@ -172,6 +192,23 @@ Py_LOCAL_INLINE(void) furtex_unlock(furtex_t *f) {
     if (--f->count)
         return;
     futex_unlock(&(f->futex));
+}
+
+Py_LOCAL_INLINE(void) furtex_reset_stats(furtex_t *f) {
+    f->no_contention_count =
+        f->contention_total_delay =
+        f->contention_max_delta =
+        f->contention_count = 0;
+}
+
+Py_LOCAL_INLINE(void) furtex_stats(furtex_t *f) {
+    printf("[%s] %ld x no contention\n", f->description, f->no_contention_count);
+    printf("[%s] %ld x contention\n", f->description, f->contention_count);
+    printf("[%s] %ld contention total delay\n", f->description, f->contention_total_delay);
+    printf("[%s] %f contention total delay in seconds\n", f->description, f->contention_total_delay / 2600000000.0);
+    printf("[%s] %f contention average delay\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
+    printf("[%s] %ld contention max delay\n", f->description, f->contention_max_delta);
+    furtex_reset_stats(f);
 }
 
 
@@ -871,6 +908,52 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
 #endif
 #endif /* !Py_TRACE_REFS */
 
+// #define PY_TIME_REFCOUNTS
+#ifdef PY_TIME_REFCOUNTS
+
+extern uint64_t total_refcount_time;
+extern uint64_t total_refcounts;
+
+Py_LOCAL_INLINE(int) __py_incref__(PyObject *o) {
+    uint64_t start, delta;
+    unsigned int _;
+    _Py_INC_REFTOTAL;
+    start = __rdtscp(&_);
+    __sync_fetch_and_add(&o->ob_refcnt, 1);
+    delta = __rdtscp(&_) - start;
+    __sync_fetch_and_add(&total_refcount_time, delta);
+    __sync_fetch_and_add(&total_refcounts, 1);
+    return 1;
+}
+
+Py_LOCAL_INLINE(void) __py_decref__(PyObject *o) {
+    uint64_t start, delta, new_rc;
+    unsigned int _;
+    _Py_DEC_REFTOTAL;
+    start = __rdtscp(&_);
+    new_rc = __sync_sub_and_fetch(&(o->ob_refcnt), 1);
+    delta = __rdtscp(&_) - start;
+    __sync_fetch_and_add(&total_refcount_time, delta);
+    __sync_fetch_and_add(&total_refcounts, 1);
+    if (new_rc != 0)
+        _Py_CHECK_REFCNT(o)
+    else
+        _Py_Dealloc(o);
+}
+
+/*
+
+*/
+
+#define Py_INCREF(op)                                   \
+    (__py_incref__((PyObject *)(op)))
+
+#define Py_DECREF(op)                                   \
+    __py_decref__((PyObject *)(op))
+
+
+#else
+
 #define Py_INCREF(op) (                         \
     _Py_INC_REFTOTAL  _Py_REF_DEBUG_COMMA       \
     __sync_fetch_and_add(&(((PyObject *)(op))->ob_refcnt), 1) )
@@ -879,11 +962,14 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
     do {                                                \
         PyObject *_py_decref_tmp = (PyObject *)(op);    \
         if (_Py_DEC_REFTOTAL  _Py_REF_DEBUG_COMMA       \
-        __sync_sub_and_fetch(&(_py_decref_tmp->ob_refcnt),1) != 0)             \
-            _Py_CHECK_REFCNT(_py_decref_tmp)            \
+        __sync_sub_and_fetch(&(_py_decref_tmp->ob_refcnt), 1) != 0) \
+             _Py_CHECK_REFCNT(_py_decref_tmp)            \
         else                                            \
-        _Py_Dealloc(_py_decref_tmp);                    \
+            _Py_Dealloc(_py_decref_tmp);                \
     } while (0)
+
+
+#endif /* PY_TIME_REFCOUNTS */
 
 /* Safely decref `op` and set `op` to NULL, especially useful in tp_clear
  * and tp_dealloc implementations.
@@ -989,6 +1075,7 @@ PyAPI_DATA(PyObject) _Py_NoneStruct; /* Don't use this directly */
 #define Py_None (&_Py_NoneStruct)
 
 /* Macro for returning Py_None from a function */
+/* #define Py_RETURN_NONE do { Py_INCREF(Py_None); return Py_None; } while (0) */
 #define Py_RETURN_NONE return Py_INCREF(Py_None), Py_None
 
 /*
@@ -999,6 +1086,11 @@ PyAPI_DATA(PyObject) _Py_NotImplementedStruct; /* Don't use this directly */
 #define Py_NotImplemented (&_Py_NotImplementedStruct)
 
 /* Macro for returning Py_NotImplemented from a function */
+/*
+#define Py_RETURN_NOTIMPLEMENTED \
+do { Py_INCREF(Py_NotImplemented); return Py_NotImplemented; } while(0)
+*/
+
 #define Py_RETURN_NOTIMPLEMENTED \
     return Py_INCREF(Py_NotImplemented), Py_NotImplemented
 

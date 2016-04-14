@@ -123,9 +123,12 @@ list_resize(PyListObject *self, Py_ssize_t newsize)
     return 0;
 }
 
-static furtex_t module_furtex = {0, 0, 0};
+static furtex_t module_furtex = {0, 0, 0, "list module lock"};
 #define module_lock() furtex_lock(&module_furtex)
 #define module_unlock() furtex_unlock(&module_furtex)
+void listobject_lock_stats(void) {
+    furtex_stats(&module_furtex);
+}
 
 /* Debug statistic to compare allocations with reuse through the free list */
 #undef SHOW_ALLOC_COUNT

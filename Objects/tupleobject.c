@@ -12,10 +12,14 @@
 #define PyTuple_MAXFREELIST  2000  /* Maximum number of tuples of each size to save */
 #endif
 
-static furtex_t module_furtex = {0, 0, 0};
+static furtex_t module_furtex = {0, 0, 0, "tuple module lock"};
 #define module_lock() furtex_lock(&module_furtex)
 #define module_unlock() furtex_unlock(&module_furtex)
 #define module_gc_lock() gc_lock2(&module_furtex)
+void tupleobject_lock_stats(void) {
+    furtex_stats(&module_furtex);
+}
+
 #if PyTuple_MAXSAVESIZE > 0
 /* Entries 1 up to PyTuple_MAXSAVESIZE are free lists, entry 0 is the empty
    tuple () of which at most one instance will be allocated.

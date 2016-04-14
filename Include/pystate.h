@@ -108,6 +108,10 @@ typedef struct _ts {
     int trash_delete_nesting;
     PyObject *trash_delete_later;
 
+    #define PyFrame_MAXFREELIST 100 /* per thread */
+    struct _frame *frame_freelist;
+    int frame_freelist_count;
+
     /* Called when a thread state is deleted normally, but not when it
      * is destroyed after fork().
      * Pain:  to prevent rare but fatal shutdown errors (issue 18808),
@@ -167,6 +171,10 @@ PyAPI_FUNC(void) _PyThreadState_DeleteExcept(PyThreadState *tstate);
 PyAPI_FUNC(void) PyThreadState_DeleteCurrent(void);
 PyAPI_FUNC(void) _PyGILState_Reinit(void);
 #endif
+
+PyAPI_FUNC(struct _frame *) PyThreadState_FrameFreeListAlloc(PyThreadState *tstate);
+PyAPI_FUNC(void) PyThreadState_FrameFreeListFree(PyThreadState *tstate, struct _frame *o);
+PyAPI_FUNC(void) PyThreadState_FrameFreeListClear(PyThreadState *tstate);
 
 /* Return the current thread state. The global interpreter lock must be held.
  * When the current thread state is NULL, this issues a fatal error (so that

@@ -636,11 +636,19 @@ static int running_on_valgrind = -1;
 /*
  * Python's threads are serialized, so object malloc locking is disabled.
  */
+#if 0
 #define SIMPLELOCK_DECL(lock)   /* simple lock declaration              */
 #define SIMPLELOCK_INIT(lock)   /* allocate (if needed) and initialize  */
 #define SIMPLELOCK_FINI(lock)   /* free/destroy an existing lock        */
 #define SIMPLELOCK_LOCK(lock)   /* acquire released lock */
 #define SIMPLELOCK_UNLOCK(lock) /* release acquired lock */
+#else
+#define SIMPLELOCK_DECL(lock)   furtex_t lock = {0, 0, 0, "obmalloc lock"};
+#define SIMPLELOCK_INIT(lock)
+#define SIMPLELOCK_FINI(lock)
+#define SIMPLELOCK_LOCK(lock)   furtex_lock(&(lock))
+#define SIMPLELOCK_UNLOCK(lock) furtex_unlock(&(lock))
+#endif
 
 /*
  * Basic types
