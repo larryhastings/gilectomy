@@ -1946,20 +1946,25 @@ _PyFloat_Init(void)
 int
 PyFloat_ClearFreeList(void)
 {
-    PyFloatObject *f, *next;
-    int i;
+    PyFloatObject *head;
+    int count, i;
+
     module_lock();
-    f = free_list;
-    i = numfree;
-    while (f) {
-        next = (PyFloatObject*) Py_TYPE(f);
-        PyObject_FREE(f);
-        f = next;
-    }
+    head = free_list;
+    count = numfree;
     free_list = NULL;
     numfree = 0;
     module_unlock();
-    return i;
+
+    i = 0;
+    while (head) {
+        PyObject *self = (PyObject *)head;
+        head = (PyFloatObject *)Py_TYPE(head);
+        PyObject_FREE(self);
+        i++;
+    }
+    assert(i == count);
+    return count;
 }
 
 void

@@ -511,6 +511,7 @@ xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx*/
 
      PyAPI_FUNC(void) PyObject_Lock(PyObject *obj);
      PyAPI_FUNC(void) PyObject_Unlock(PyObject *obj);
+     /* Locks two objects, using a predictable ordering to avoid deadlocks. */
      PyAPI_FUNC(void) PyObject_Lock2(PyObject *o1, PyObject *o2);
      PyAPI_FUNC(void) PyObject_Unlock2(PyObject *o1, PyObject *o2);
 

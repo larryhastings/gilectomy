@@ -826,6 +826,8 @@ exit:
 
 /* Internal function to find slot for an item from its hash
  * when it is known that the key is not present in the dict.
+ *
+ * This function assumes the dict is already locked.
  */
 static PyDictKeyEntry *
 find_empty_slot(PyDictObject *mp, PyObject *key, Py_hash_t hash,
@@ -833,12 +835,9 @@ find_empty_slot(PyDictObject *mp, PyObject *key, Py_hash_t hash,
 {
     size_t i;
     size_t perturb;
-    size_t mask;
-    PyDictKeyEntry *ep0;
+    size_t mask = DK_MASK(mp->ma_keys);
+    PyDictKeyEntry *ep0 = &mp->ma_keys->dk_entries[0];
     PyDictKeyEntry *ep;
-
-    mask = DK_MASK(mp->ma_keys);
-    ep0 = &mp->ma_keys->dk_entries[0];
 
     assert(key != NULL);
     if (!PyUnicode_CheckExact(key))
@@ -867,6 +866,8 @@ insertion_resize(PyDictObject *mp)
 Internal routine to insert a new item into the table.
 Used both by the internal resize routine and by the public insert routine.
 Returns -1 if an error occurred, or 0 on success.
+
+This function assumes the dict is already locked.
 */
 static int
 insertdict(PyDictObject *mp, PyObject *key, Py_hash_t hash, PyObject *value)
@@ -1124,7 +1125,6 @@ _PyDict_NewPresized(Py_ssize_t minused)
  * function hits a stack-depth error, which can cause this to return NULL
  * even if the key is present.
  */
-
 PyObject *
 PyDict_GetItem(PyObject *op, PyObject *key)
 {
@@ -1187,6 +1187,7 @@ _PyDict_GetItem_KnownHash(PyObject *op, PyObject *key, Py_hash_t hash)
     PyDictKeyEntry *ep;
     PyThreadState *tstate;
     PyObject **value_addr;
+    PyObject *value;
 
     if (!PyDict_Check(op))
         return NULL;
@@ -1218,8 +1219,9 @@ _PyDict_GetItem_KnownHash(PyObject *op, PyObject *key, Py_hash_t hash)
             return NULL;
         }
     }
+    value = *value_addr;
     dict_unlock(mp);
-    return *value_addr;
+    return value;
 }
 
 /* Variant of PyDict_GetItem() that doesn't suppress exceptions.

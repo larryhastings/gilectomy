@@ -87,6 +87,9 @@ whose size is determined when the object is allocated.
 ** futex
 **
 ** linux-specific fast userspace lock
+**
+** Yes, this futex/furtex shouldn't just be plopped in the
+** middle of object.h.  We can find a better place for it later.
 */
 
 #include <errno.h>
@@ -110,10 +113,10 @@ Py_LOCAL_INLINE(int) futex(int *uaddr, int futex_op, int val,
    }
 
 #define futex_wait(i_ptr, value) \
-    (futex(i_ptr, FUTEX_WAIT, value, NULL, NULL, 0))
+    (futex(i_ptr, FUTEX_WAIT_PRIVATE, value, NULL, NULL, 0))
 
 #define futex_wake(i_ptr, value) \
-    (futex(i_ptr, FUTEX_WAKE, value, NULL, NULL, 0))
+    (futex(i_ptr, FUTEX_WAKE_PRIVATE, value, NULL, NULL, 0))
 
 Py_LOCAL_INLINE(void) futex_init(int *f) {
     *f = 0;
@@ -143,19 +146,32 @@ Py_LOCAL_INLINE(void) futex_unlock(int *f) {
 ** furtex
 **
 ** recursive futex lock
+**
 */
+
+#if 0 /* ACTIVATE STATS */
+    #define FURTEX_WANT_STATS
+    #define GC_TRACK_STATS
+    #define PY_TIME_REFCOUNTS
+#endif /* ACTIVATE STATS */
+
+
+#ifdef FURTEX_WANT_STATS
 #define PyMAX(a, b) ((a)>(b)?(a):(b))
 #define PyMIN(a, b) ((a)<(b)?(a):(b))
+#endif /* FURTEX_WANT_STATS */
 
 typedef struct {
     int futex;
     int count;
     pthread_t tid;
     char *description;
+#ifdef FURTEX_WANT_STATS
     uint64_t no_contention_count;
     uint64_t contention_count;
     uint64_t contention_total_delay;
     uint64_t contention_max_delta;
+#endif /* FURTEX_WANT_STATS */
 } furtex_t;
 
 Py_LOCAL_INLINE(void) furtex_init(furtex_t *f) {
@@ -164,15 +180,20 @@ Py_LOCAL_INLINE(void) furtex_init(furtex_t *f) {
 
 Py_LOCAL_INLINE(void) furtex_lock(furtex_t *f) {
     pthread_t tid = pthread_self();
+#ifdef FURTEX_WANT_STATS
     uint64_t start, delta;
     unsigned int _;
+#endif /* FURTEX_WANT_STATS */
     if (f->count && pthread_equal(f->tid, tid)) {
         f->count++;
         assert(f->count > 1);
         return;
     }
+#ifdef FURTEX_WANT_STATS
     start = __rdtscp(&_);
+#endif /* FURTEX_WANT_STATS */
     futex_lock(&(f->futex));
+#ifdef FURTEX_WANT_STATS
     delta = __rdtscp(&_) - start;
     if (delta <= 250)
         f->no_contention_count++;
@@ -181,6 +202,7 @@ Py_LOCAL_INLINE(void) furtex_lock(furtex_t *f) {
         f->contention_total_delay += delta;
         f->contention_max_delta = PyMAX(f->contention_max_delta, delta);
     }
+#endif /* FURTEX_WANT_STATS */
     f->tid = tid;
     assert(f->count == 0);
     f->count = 1;
@@ -195,20 +217,29 @@ Py_LOCAL_INLINE(void) furtex_unlock(furtex_t *f) {
 }
 
 Py_LOCAL_INLINE(void) furtex_reset_stats(furtex_t *f) {
+#ifdef FURTEX_WANT_STATS
     f->no_contention_count =
         f->contention_total_delay =
         f->contention_max_delta =
         f->contention_count = 0;
+#endif /* FURTEX_WANT_STATS */
 }
 
 Py_LOCAL_INLINE(void) furtex_stats(furtex_t *f) {
-    printf("[%s] %ld x no contention\n", f->description, f->no_contention_count);
-    printf("[%s] %ld x contention\n", f->description, f->contention_count);
-    printf("[%s] %ld contention total delay\n", f->description, f->contention_total_delay);
-    printf("[%s] %f contention total delay in seconds\n", f->description, f->contention_total_delay / 2600000000.0);
-    printf("[%s] %f contention average delay\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
-    printf("[%s] %ld contention max delay\n", f->description, f->contention_max_delta);
+#ifdef FURTEX_WANT_STATS
+    printf("[%s] %ld total locks\n", f->description, f->no_contention_count + f->contention_count);
+    printf("[%s] %ld locks without contention\n", f->description, f->no_contention_count);
+    printf("[%s] %ld locks with contention\n", f->description, f->contention_count);
+    printf("[%s] %ld contention total delay in cycles\n", f->description, f->contention_total_delay);
+    printf("[%s] %f contention total delay in cpu-seconds\n", f->description, f->contention_total_delay / 2600000000.0);
+    printf("[%s] %f contention average delay in cycles\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
+    printf("[%s] %ld contention max delay in cycles\n", f->description, f->contention_max_delta);
     furtex_reset_stats(f);
+/*
+#else
+    printf("[furtex stats disabled at compile-time]\n");
+*/
+#endif /* FURTEX_WANT_STATS */
 }
 
 
@@ -908,7 +939,6 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
 #endif
 #endif /* !Py_TRACE_REFS */
 
-// #define PY_TIME_REFCOUNTS
 #ifdef PY_TIME_REFCOUNTS
 
 extern uint64_t total_refcount_time;
@@ -941,16 +971,11 @@ Py_LOCAL_INLINE(void) __py_decref__(PyObject *o) {
         _Py_Dealloc(o);
 }
 
-/*
-
-*/
-
 #define Py_INCREF(op)                                   \
     (__py_incref__((PyObject *)(op)))
 
 #define Py_DECREF(op)                                   \
     __py_decref__((PyObject *)(op))
-
 
 #else
 
@@ -963,13 +988,13 @@ Py_LOCAL_INLINE(void) __py_decref__(PyObject *o) {
         PyObject *_py_decref_tmp = (PyObject *)(op);    \
         if (_Py_DEC_REFTOTAL  _Py_REF_DEBUG_COMMA       \
         __sync_sub_and_fetch(&(_py_decref_tmp->ob_refcnt), 1) != 0) \
-             _Py_CHECK_REFCNT(_py_decref_tmp)            \
+            _Py_CHECK_REFCNT(_py_decref_tmp)            \
         else                                            \
             _Py_Dealloc(_py_decref_tmp);                \
     } while (0)
 
-
 #endif /* PY_TIME_REFCOUNTS */
+
 
 /* Safely decref `op` and set `op` to NULL, especially useful in tp_clear
  * and tp_dealloc implementations.
@@ -1075,7 +1100,6 @@ PyAPI_DATA(PyObject) _Py_NoneStruct; /* Don't use this directly */
 #define Py_None (&_Py_NoneStruct)
 
 /* Macro for returning Py_None from a function */
-/* #define Py_RETURN_NONE do { Py_INCREF(Py_None); return Py_None; } while (0) */
 #define Py_RETURN_NONE return Py_INCREF(Py_None), Py_None
 
 /*
@@ -1086,11 +1110,6 @@ PyAPI_DATA(PyObject) _Py_NotImplementedStruct; /* Don't use this directly */
 #define Py_NotImplemented (&_Py_NotImplementedStruct)
 
 /* Macro for returning Py_NotImplemented from a function */
-/*
-#define Py_RETURN_NOTIMPLEMENTED \
-do { Py_INCREF(Py_NotImplemented); return Py_NotImplemented; } while(0)
-*/
-
 #define Py_RETURN_NOTIMPLEMENTED \
     return Py_INCREF(Py_NotImplemented), Py_NotImplemented
 

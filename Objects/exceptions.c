@@ -2266,18 +2266,23 @@ preallocate_memerrors(void)
 static void
 free_preallocated_memerrors(void)
 {
-    for (;;) {
-        PyObject *self;
-        module_lock();
-        if (memerrors_freelist == NULL)
-            break;
-        self = (PyObject *) memerrors_freelist;
-        memerrors_freelist = (PyBaseExceptionObject *) memerrors_freelist->dict;
-        module_unlock();
-        Py_TYPE(self)->tp_free((PyObject *)self);
-    }
+    PyBaseExceptionObject *head;
+    int numfree;
+
+    module_lock();
+    head = memerrors_freelist;
+    numfree = memerrors_numfree;
     memerrors_numfree = 0;
+    memerrors_freelist = NULL;
     module_unlock();
+
+    while (head) {
+        PyObject *self = (PyObject *)head;
+        head = (PyBaseExceptionObject *)head->dict;
+        Py_TYPE(self)->tp_free(self);
+        numfree--;
+    }
+    assert(numfree == 0);
 }
 
 

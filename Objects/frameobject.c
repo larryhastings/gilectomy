@@ -9,14 +9,6 @@
 
 #define OFF(x) offsetof(PyFrameObject, x)
 
-static furtex_t module_furtex = {0, 0, 0, "frameobject module lock"};
-#define module_lock() furtex_lock(&module_furtex)
-#define module_unlock() furtex_unlock(&module_furtex)
-
-void frameobject_lock_stats(void) {
-    furtex_stats(&module_furtex);
-}
-
 static PyMemberDef frame_memberlist[] = {
     {"f_back",          T_OBJECT,       OFF(f_back),      READONLY},
     {"f_code",          T_OBJECT,       OFF(f_code),      READONLY},
@@ -416,12 +408,12 @@ static PyGetSetDef frame_getsetlist[] = {
    Later, PyFrame_MAXFREELIST was added to bound the # of frames saved on
    free_list.  Else programs creating lots of cyclic trash involving
    frames could provoke free_list into growing without bound.
+
+   Later still, the frame freelist was moved to the PyThreadState
+   object for each thread, because contention for the module lock
+   was quite costly.
 */
 
-static PyFrameObject *free_list = NULL;
-static int numfree = 0;         /* number of frames currently in free_list */
-/* max value for numfree */
-// #define PyFrame_MAXFREELIST 200
 
 static void
 frame_dealloc(PyFrameObject *f)
@@ -630,7 +622,6 @@ PyFrame_New(PyThreadState *tstate, PyCodeObject *code, PyObject *globals,
     PyFrameObject *f;
     PyObject *builtins;
     Py_ssize_t i;
-    char *f_from = "unknown!";
 
 #ifdef Py_DEBUG
     if (code == NULL || globals == NULL || !PyDict_Check(globals) ||
@@ -668,7 +659,6 @@ PyFrame_New(PyThreadState *tstate, PyCodeObject *code, PyObject *globals,
         Py_INCREF(builtins);
     }
     if (code->co_zombieframe != NULL) {
-        f_from = "zombie frame";
         f = code->co_zombieframe;
         code->co_zombieframe = NULL;
         _Py_NewReference((PyObject *)f);
@@ -682,7 +672,6 @@ PyFrame_New(PyThreadState *tstate, PyCodeObject *code, PyObject *globals,
             nfrees;
         f = PyThreadState_FrameFreeListAlloc(tstate);
         if (f == NULL) {
-            f_from = "PyObject_GC_NewVar";
             f = PyObject_GC_NewVar(PyFrameObject, &PyFrame_Type,
                 extras);
             if (f == NULL) {
@@ -691,7 +680,6 @@ PyFrame_New(PyThreadState *tstate, PyCodeObject *code, PyObject *globals,
             }
         }
         else {
-            f_from = "freelist";
             if (Py_SIZE(f) < extras) {
                 PyFrameObject *new_f = PyObject_GC_Resize(PyFrameObject, f, extras);
                 if (new_f == NULL) {
@@ -700,7 +688,6 @@ PyFrame_New(PyThreadState *tstate, PyCodeObject *code, PyObject *globals,
                     return NULL;
                 }
                 f = new_f;
-                f_from = "PyObject_GC_Resize";
             }
             _Py_NewReference((PyObject *)f);
         }
@@ -990,21 +977,17 @@ PyFrame_LocalsToFast(PyFrameObject *f, int clear)
 int
 PyFrame_ClearFreeList(void)
 {
-    int freelist_size;
-
-    module_lock();
-    freelist_size = numfree;
-    while (free_list != NULL) {
-        PyFrameObject *f = free_list;
-        free_list = free_list->f_back;
-        module_unlock();
-        PyObject_GC_Del(f);
-        module_lock();
-        --numfree;
-    }
-    assert(numfree == 0);
-    module_unlock();
-    return freelist_size;
+    // TODO this should walk all tstates
+    // and free their frameobject freelists
+    //
+    // there's no locks on the tstate freelists,
+    // but if you use CAS to grab the head pointer
+    // and replace it with NULL you'll be fine.
+    //
+    // if a thread is shutting down, would you be
+    // in a race with it?  hmm, maybe.  maybe we
+    // need a lock around tstate creation/destruction.
+    return 0;
 }
 
 void
@@ -1017,8 +1000,9 @@ PyFrame_Fini(void)
 void
 _PyFrame_DebugMallocStats(FILE *out)
 {
+    // TODO fix this for the new world order of per-tstate framelists
     _PyDebugAllocatorStats(out,
                            "free PyFrameObject",
-                           numfree, sizeof(PyFrameObject));
+                           0, sizeof(PyFrameObject));
 }
 

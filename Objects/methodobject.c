@@ -6,7 +6,6 @@
 
 static furtex_t module_furtex = {0, 0, 0};
 #define module_lock() furtex_lock(&module_furtex)
-#define module_gc_lock() gc_lock2(&module_furtex)
 #define module_unlock() furtex_unlock(&module_furtex)
 
 /* Free list for method objects to safe malloc/free overhead
@@ -35,9 +34,9 @@ PyCFunction_NewEx(PyMethodDef *ml, PyObject *self, PyObject *module)
     op = free_list;
     if (op != NULL) {
         free_list = (PyCFunctionObject *)(op->m_self);
-        (void)PyObject_INIT(op, &PyCFunction_Type);
         numfree--;
         module_unlock();
+        (void)PyObject_INIT(op, &PyCFunction_Type);
     }
     else {
         module_unlock();
@@ -385,20 +384,25 @@ PyTypeObject PyCFunction_Type = {
 int
 PyCFunction_ClearFreeList(void)
 {
-    int freelist_size;
+    PyCFunctionObject *head;
+    int freed, count;
 
-    module_gc_lock();
-    freelist_size = numfree;
-    while (free_list) {
-        PyCFunctionObject *v = free_list;
-        free_list = (PyCFunctionObject *)(v->m_self);
-        PyObject_GC_Del(v);
-        numfree--;
-    }
-    assert(numfree == 0);
-    gc_unlock();
+    module_lock();
+    head = free_list;
+    freed = count = numfree;
+    free_list = NULL;
+    numfree = 0;
     module_unlock();
-    return freelist_size;
+
+    while (head) {
+        PyCFunctionObject *v = head;
+        head = (PyCFunctionObject *)(head->m_self);
+        PyObject_GC_Del(v);
+        count--;
+    }
+    assert(counter == 0);
+
+    return freed;
 }
 
 void

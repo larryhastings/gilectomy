@@ -39,7 +39,6 @@ typedef struct _frame {
     /* Borrowed reference to a generator, or NULL */
     PyObject *f_gen;
 
-    /* Borrowed reference to tstate */
     PyThreadState *f_tstate;
 
     int f_lasti;                /* Last instruction if called */
