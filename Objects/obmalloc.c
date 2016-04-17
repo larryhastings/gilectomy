@@ -621,34 +621,16 @@ static int running_on_valgrind = -1;
 /*
  * Locking
  *
- * To reduce lock contention, it would probably be better to refine the
- * crude function locking with per size class locking. I'm not positive
- * however, whether it's worth switching to such locking policy because
- * of the performance penalty it might introduce.
- *
- * The following macros describe the simplest (should also be the fastest)
- * lock object on a particular platform and the init/fini/lock/unlock
- * operations on it. The locks defined here are not expected to be recursive
- * because it is assumed that they will always be called in the order:
- * INIT, [LOCK, UNLOCK]*, FINI.
  */
 
-/*
- * Python's threads are serialized, so object malloc locking is disabled.
- */
-#if 0
-#define SIMPLELOCK_DECL(lock)   /* simple lock declaration              */
-#define SIMPLELOCK_INIT(lock)   /* allocate (if needed) and initialize  */
-#define SIMPLELOCK_FINI(lock)   /* free/destroy an existing lock        */
-#define SIMPLELOCK_LOCK(lock)   /* acquire released lock */
-#define SIMPLELOCK_UNLOCK(lock) /* release acquired lock */
-#else
-#define SIMPLELOCK_DECL(lock)   furtex_t lock = {0, 0, 0, "obmalloc lock"};
-#define SIMPLELOCK_INIT(lock)
-#define SIMPLELOCK_FINI(lock)
-#define SIMPLELOCK_LOCK(lock)   furtex_lock(&(lock))
-#define SIMPLELOCK_UNLOCK(lock) furtex_unlock(&(lock))
-#endif
+int _arena_lock = 0;
+#define arena_lock()    (futex_lock  (&_arena_lock))
+#define arena_unlock()  (futex_unlock(&_arena_lock))
+
+int _pool_locks[NB_SMALL_SIZE_CLASSES];
+#define LOCK(class)     (futex_lock  (_pool_locks + class))
+#define UNLOCK(class)   (futex_unlock(_pool_locks + class))
+
 
 /*
  * Basic types
@@ -736,15 +718,6 @@ struct arena_object {
 #define NUMBLOCKS(I) ((uint)(POOL_SIZE - POOL_OVERHEAD) / INDEX2SIZE(I))
 
 /*==========================================================================*/
-
-/*
- * This malloc lock
- */
-SIMPLELOCK_DECL(_malloc_lock)
-#define LOCK()          SIMPLELOCK_LOCK(_malloc_lock)
-#define UNLOCK()        SIMPLELOCK_UNLOCK(_malloc_lock)
-#define LOCK_INIT()     SIMPLELOCK_INIT(_malloc_lock)
-#define LOCK_FINI()     SIMPLELOCK_FINI(_malloc_lock)
 
 /*
  * Pool table -- headed, circular, doubly-linked lists of partially used pools.
@@ -1181,8 +1154,9 @@ _PyObject_Alloc(int use_calloc, void *ctx, size_t nelem, size_t elsize)
     poolp pool;
     poolp next;
     uint size;
+    uint class;
 
-    _Py_AllocatedBlocks++;
+    __sync_fetch_and_add(&_Py_AllocatedBlocks, 1);
 
     assert(nelem <= PY_SSIZE_T_MAX / elsize);
     nbytes = nelem * elsize;
@@ -1198,12 +1172,12 @@ _PyObject_Alloc(int use_calloc, void *ctx, size_t nelem, size_t elsize)
         goto redirect;
 
     if ((nbytes - 1) < SMALL_REQUEST_THRESHOLD) {
-        LOCK();
+        class = (uint)(nbytes - 1) >> ALIGNMENT_SHIFT;
+        LOCK(class);
         /*
          * Most frequent paths first
          */
-        size = (uint)(nbytes - 1) >> ALIGNMENT_SHIFT;
-        pool = usedpools[size + size];
+        pool = usedpools[class + class];
         if (pool != pool->nextpool) {
             /*
              * There is a used pool for this size class.
@@ -1213,7 +1187,7 @@ _PyObject_Alloc(int use_calloc, void *ctx, size_t nelem, size_t elsize)
             bp = pool->freeblock;
             assert(bp != NULL);
             if ((pool->freeblock = *(block **)bp) != NULL) {
-                UNLOCK();
+                UNLOCK(class);
                 if (use_calloc)
                     memset(bp, 0, nbytes);
                 return (void *)bp;
@@ -1225,9 +1199,9 @@ _PyObject_Alloc(int use_calloc, void *ctx, size_t nelem, size_t elsize)
                 /* There is room for another block. */
                 pool->freeblock = (block*)pool +
                                   pool->nextoffset;
-                pool->nextoffset += INDEX2SIZE(size);
+                pool->nextoffset += INDEX2SIZE(class);
                 *(block **)(pool->freeblock) = NULL;
-                UNLOCK();
+                UNLOCK(class);
                 if (use_calloc)
                     memset(bp, 0, nbytes);
                 return (void *)bp;
@@ -1237,7 +1211,7 @@ _PyObject_Alloc(int use_calloc, void *ctx, size_t nelem, size_t elsize)
             pool = pool->prevpool;
             next->prevpool = pool;
             pool->nextpool = next;
-            UNLOCK();
+            UNLOCK(class);
             if (use_calloc)
                 memset(bp, 0, nbytes);
             return (void *)bp;
@@ -1246,17 +1220,20 @@ _PyObject_Alloc(int use_calloc, void *ctx, size_t nelem, size_t elsize)
         /* There isn't a pool of the right size class immediately
          * available:  use a free pool.
          */
+        arena_lock();
         if (usable_arenas == NULL) {
             /* No arena has a free pool:  allocate a new arena. */
 #ifdef WITH_MEMORY_LIMITS
             if (narenas_currently_allocated >= MAX_ARENAS) {
-                UNLOCK();
+                arena_unlock();
+                UNLOCK(class);
                 goto redirect;
             }
 #endif
             usable_arenas = new_arena();
             if (usable_arenas == NULL) {
-                UNLOCK();
+                arena_unlock();
+                UNLOCK(class);
                 goto redirect;
             }
             usable_arenas->nextarena =
@@ -1302,15 +1279,16 @@ _PyObject_Alloc(int use_calloc, void *ctx, size_t nelem, size_t elsize)
                        (block*)usable_arenas->address +
                            ARENA_SIZE - POOL_SIZE);
             }
+        arena_unlock();
         init_pool:
             /* Frontlink to used pools. */
-            next = usedpools[size + size]; /* == prev */
+            next = usedpools[class + class]; /* == prev */
             pool->nextpool = next;
             pool->prevpool = next;
             next->nextpool = pool;
             next->prevpool = pool;
             pool->ref.count = 1;
-            if (pool->szidx == size) {
+            if (pool->szidx == class) {
                 /* Luckily, this pool last contained blocks
                  * of the same size class, so its header
                  * and free list are already initialized.
@@ -1318,7 +1296,7 @@ _PyObject_Alloc(int use_calloc, void *ctx, size_t nelem, size_t elsize)
                 bp = pool->freeblock;
                 assert(bp != NULL);
                 pool->freeblock = *(block **)bp;
-                UNLOCK();
+                UNLOCK(class);
                 if (use_calloc)
                     memset(bp, 0, nbytes);
                 return (void *)bp;
@@ -1328,14 +1306,14 @@ _PyObject_Alloc(int use_calloc, void *ctx, size_t nelem, size_t elsize)
              * contain just the second block, and return the first
              * block.
              */
-            pool->szidx = size;
-            size = INDEX2SIZE(size);
+            pool->szidx = class;
+            size = INDEX2SIZE(class);
             bp = (block *)pool + POOL_OVERHEAD;
             pool->nextoffset = POOL_OVERHEAD + (size << 1);
             pool->maxnextoffset = POOL_SIZE - size;
             pool->freeblock = bp + size;
             *(block **)(pool->freeblock) = NULL;
-            UNLOCK();
+            UNLOCK(class);
             if (use_calloc)
                 memset(bp, 0, nbytes);
             return (void *)bp;
@@ -1365,6 +1343,7 @@ _PyObject_Alloc(int use_calloc, void *ctx, size_t nelem, size_t elsize)
             }
         }
 
+        arena_unlock();
         goto init_pool;
     }
 
@@ -1383,7 +1362,7 @@ redirect:
         else
             result = PyMem_RawMalloc(nbytes);
         if (!result)
-            _Py_AllocatedBlocks--;
+            __sync_sub_and_fetch(&_Py_AllocatedBlocks, 1);
         return result;
     }
 }
@@ -1409,7 +1388,7 @@ _PyObject_Free(void *ctx, void *p)
     poolp pool;
     block *lastfree;
     poolp next, prev;
-    uint size;
+    uint class;
 #ifndef Py_USING_MEMORY_DEBUGGER
     uint arenaindex_temp;
 #endif
@@ -1417,7 +1396,7 @@ _PyObject_Free(void *ctx, void *p)
     if (p == NULL)      /* free(NULL) has no effect */
         return;
 
-    _Py_AllocatedBlocks--;
+    __sync_sub_and_fetch(&_Py_AllocatedBlocks, 1);
 
 #ifdef WITH_VALGRIND
     if (UNLIKELY(running_on_valgrind > 0))
@@ -1425,9 +1404,10 @@ _PyObject_Free(void *ctx, void *p)
 #endif
 
     pool = POOL_ADDR(p);
+    class = pool->szidx;
     if (Py_ADDRESS_IN_RANGE(p, pool)) {
         /* We allocated this address. */
-        LOCK();
+        LOCK(class);
         /* Link p to the start of the pool's freeblock list.  Since
          * the pool had at least the p block outstanding, the pool
          * wasn't empty (so it's already in a usedpools[] list, or
@@ -1446,7 +1426,7 @@ _PyObject_Free(void *ctx, void *p)
              */
             if (--pool->ref.count != 0) {
                 /* pool isn't empty:  leave it in usedpools */
-                UNLOCK();
+                UNLOCK(class);
                 return;
             }
             /* Pool is now empty:  unlink from usedpools, and
@@ -1462,6 +1442,7 @@ _PyObject_Free(void *ctx, void *p)
             /* Link the pool to freepools.  This is a singly-linked
              * list, and pool->prevpool isn't used there.
              */
+            arena_lock();
             ao = &arenas[pool->arenaindex];
             pool->nextpool = ao->freepools;
             ao->freepools = pool;
@@ -1518,7 +1499,8 @@ _PyObject_Free(void *ctx, void *p)
                 ao->address = 0;                        /* mark unassociated */
                 --narenas_currently_allocated;
 
-                UNLOCK();
+                arena_unlock();
+                UNLOCK(class);
                 return;
             }
             if (nf == 1) {
@@ -1534,7 +1516,8 @@ _PyObject_Free(void *ctx, void *p)
                 usable_arenas = ao;
                 assert(usable_arenas->address != 0);
 
-                UNLOCK();
+                arena_unlock();
+                UNLOCK(class);
                 return;
             }
             /* If this arena is now out of order, we need to keep
@@ -1547,7 +1530,8 @@ _PyObject_Free(void *ctx, void *p)
             if (ao->nextarena == NULL ||
                          nf <= ao->nextarena->nfreepools) {
                 /* Case 4.  Nothing to do. */
-                UNLOCK();
+                arena_unlock();
+                UNLOCK(class);
                 return;
             }
             /* Case 3:  We have to move the arena towards the end
@@ -1596,7 +1580,8 @@ _PyObject_Free(void *ctx, void *p)
                 ao->prevarena == NULL) ||
                 ao->prevarena->nextarena == ao);
 
-            UNLOCK();
+            arena_unlock();
+            UNLOCK(class);
             return;
         }
         /* Pool was full, so doesn't currently live in any list:
@@ -1607,15 +1592,14 @@ _PyObject_Free(void *ctx, void *p)
          */
         --pool->ref.count;
         assert(pool->ref.count > 0);            /* else the pool is empty */
-        size = pool->szidx;
-        next = usedpools[size + size];
+        next = usedpools[class + class];
         prev = next->prevpool;
         /* insert pool before next:   prev <-> pool <-> next */
         pool->nextpool = next;
         pool->prevpool = prev;
         next->prevpool = pool;
         prev->nextpool = pool;
-        UNLOCK();
+        UNLOCK(class);
         return;
     }
 

@@ -554,21 +554,21 @@ Py_FinalizeEx(void)
 
     furtex_stats(&(((PyDictObject *)interp->builtins)->ma_lock));
     {
-    extern void frameobject_lock_stats(void);
     extern void tupleobject_lock_stats(void);
     extern void listobject_lock_stats(void);
     extern void dictobject_lock_stats(void);
-    extern furtex_t _malloc_lock;
+    // extern furtex_t _malloc_lock;
     dictobject_lock_stats();
     listobject_lock_stats();
     tupleobject_lock_stats();
-    frameobject_lock_stats();
-    furtex_stats(&_malloc_lock);
+    // furtex_stats(&_malloc_lock);
     }
-    printf("%lu total_refcounts\n", total_refcounts);
-    printf("%lu total_refcount_time\n", total_refcount_time);
-    printf("%f total_refcount_time in seconds\n", total_refcount_time / 2600000000.0);
-    printf("%f average time in refcount\n", ((double)total_refcount_time) / total_refcounts);
+    if (total_refcounts) {
+        printf("[py_incr/py_decr] %lu total py_incr/py_decr calls\n", total_refcounts);
+        printf("[py_incr/py_decr] %lu total time spent in py_incr/py_decr, in cycles\n", total_refcount_time);
+        printf("[py_incr/py_decr] %f total time spent in py_incr/py_decr, in seconds\n", total_refcount_time / 2600000000.0);
+        printf("[py_incr/py_decr] %f average time for a py_incr/py_decr, in cycles\n", ((double)total_refcount_time) / total_refcounts);
+    }
 
     /* Remaining threads (e.g. daemon threads) will automatically exit
        after taking the GIL (in PyEval_RestoreThread()). */
