@@ -7,7 +7,7 @@
 #include <sys/types.h>          /* For size_t */
 #endif
 
-static furtex_t module_furtex = {0, 0, 0};
+static furtex_t module_furtex = FURTEX_STATIC_INIT("collections module lock");
 #define module_lock() furtex_lock(&module_furtex)
 #define module_unlock() furtex_unlock(&module_furtex)
 

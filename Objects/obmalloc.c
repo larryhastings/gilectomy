@@ -623,14 +623,60 @@ static int running_on_valgrind = -1;
  *
  */
 
-int _arena_lock = 0;
+/*
+ * per-size class locking is a small win.
+ * it reduces contention at the cost of the overhead of needing the arena lock.
+ */
+#define OBMALLOC_LOCK_PER_SIZE_CLASS
+
+
+#ifdef OBMALLOC_LOCK_PER_SIZE_CLASS
+futex_t _arena_lock = FUTEX_STATIC_INIT("arena lock");
 #define arena_lock()    (futex_lock  (&_arena_lock))
 #define arena_unlock()  (futex_unlock(&_arena_lock))
 
-int _pool_locks[NB_SMALL_SIZE_CLASSES];
+futex_t _pool_locks[NB_SMALL_SIZE_CLASSES];
 #define LOCK(class)     (futex_lock  (_pool_locks + class))
 #define UNLOCK(class)   (futex_unlock(_pool_locks + class))
 
+void obmalloc_lock_stats(void) {
+    futex_t stats;
+    memset(&stats, 0, sizeof(stats));
+    stats.description = "obmalloc cumulative pool locks";
+#ifdef FUTEX_WANT_STATS
+    {
+    int i;
+
+    for (i = 0; i < NB_SMALL_SIZE_CLASSES; i++) {
+        futex_t *p = _pool_locks + i;
+        #define ACCUMULATE_FUTEX_STAT(field) stats.field += p->field;
+        ACCUMULATE_FUTEX_STAT(no_contention_count);
+        ACCUMULATE_FUTEX_STAT(contention_count);
+        ACCUMULATE_FUTEX_STAT(contention_total_delay);
+        ACCUMULATE_FUTEX_STAT(contention_max_delta);
+    }
+
+    }
+#endif
+    futex_stats(&stats);
+    futex_stats(&_arena_lock);
+}
+
+#else /* OBMALLOC_LOCK_PER_SIZE_CLASS */
+futex_t _obmalloc_lock = FUTEX_STATIC_INIT("obmalloc (single lock)");
+
+#define LOCK(class)     (futex_lock  (&_obmalloc_lock))
+#define UNLOCK(class)   (futex_unlock(&_obmalloc_lock))
+
+#define arena_lock()
+#define arena_unlock()
+
+
+void obmalloc_lock_stats(void) {
+    futex_stats(&_obmalloc_lock);
+}
+
+#endif /* OBMALLOC_LOCK_PER_SIZE_CLASS */
 
 /*
  * Basic types

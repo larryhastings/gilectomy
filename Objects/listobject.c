@@ -123,7 +123,7 @@ list_resize(PyListObject *self, Py_ssize_t newsize)
     return 0;
 }
 
-static furtex_t module_furtex = {0, 0, 0, "list module lock"};
+static furtex_t module_furtex = FURTEX_STATIC_INIT("list module lock");
 #define module_lock() furtex_lock(&module_furtex)
 #define module_unlock() furtex_unlock(&module_furtex)
 void listobject_lock_stats(void) {

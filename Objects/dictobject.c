@@ -213,7 +213,7 @@ static int dictresize(PyDictObject *mp, Py_ssize_t minused);
 #ifndef PyDict_MAXFREELIST
 #define PyDict_MAXFREELIST 80
 #endif
-static furtex_t module_furtex = {0, 0, 0, "dict module lock"};
+static furtex_t module_furtex = FURTEX_STATIC_INIT("dict module lock");
 #define module_lock() furtex_lock(&module_furtex)
 #define module_unlock() furtex_unlock(&module_furtex)
 void dictobject_lock_stats(void) {
