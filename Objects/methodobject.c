@@ -400,7 +400,7 @@ PyCFunction_ClearFreeList(void)
         PyObject_GC_Del(v);
         count--;
     }
-    assert(counter == 0);
+    assert(count == 0);
 
     return freed;
 }
