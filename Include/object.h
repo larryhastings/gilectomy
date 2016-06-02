@@ -92,7 +92,7 @@ whose size is determined when the object is allocated.
 ** middle of object.h.  We can find a better place for it later.
 */
 
-#if 0 /* ACTIVATE STATS */
+#if 1 /* ACTIVATE STATS */
     #define FUTEX_WANT_STATS
     #define FURTEX_WANT_STATS
     #define GC_TRACK_STATS
