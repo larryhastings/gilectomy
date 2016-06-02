@@ -1645,8 +1645,10 @@ PyInit_gc(void)
         return NULL;
     }
 
+#ifdef GC_TRACK_STATS
     printf("gc_furtex description %s\n", gc_furtex.description);
     furtex_stats(&gc_furtex);
+#endif /* GC_TRACK_STATS */
 
 #define ADD_INT(NAME) if (PyModule_AddIntConstant(m, #NAME, NAME) < 0) return NULL
     ADD_INT(DEBUG_STATS);
@@ -1740,8 +1742,10 @@ void
 _PyGC_Fini(void)
 {
     Py_CLEAR(callbacks);
+#ifdef GC_TRACK_STATS
     printf("gc_furtex description %s\n", gc_furtex.description);
     furtex_stats(&gc_furtex);
+#endif /* GC_TRACK_STATS */
 }
 
 /* for debugging */
