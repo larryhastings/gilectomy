@@ -1124,7 +1124,7 @@ invoke_gc_callback(const char *phase, int generation,
 static Py_ssize_t
 collect_with_callback(int generation)
 {
-    Py_ssize_t result, collected, uncollectable;
+    Py_ssize_t result = 0, collected = 0, uncollectable = 0;
     gc_lock();
     invoke_gc_callback("start", generation, 0, 0);
     result = collect(generation, &collected, &uncollectable, 0);
