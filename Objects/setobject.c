@@ -799,6 +799,28 @@ frozenset_hash(PyObject *self)
     return hash;
 }
 
+
+/***** set_lock functions *************************************************/
+
+Py_LOCAL_INLINE(void) set_lock_new(PySetObject *d)
+{
+    furtex_init(&d->lock);
+}
+
+Py_LOCAL_INLINE(void) set_lock_dealloc(PySetObject *d)
+{
+}
+
+Py_LOCAL_INLINE(void) set_lock(PySetObject *d)
+{
+    furtex_lock(&(d->lock));
+}
+
+Py_LOCAL_INLINE(void) set_unlock(PySetObject *d)
+{
+    furtex_unlock(&(d->lock));
+}
+
 /***** Set iterator type ***********************************************/
 
 typedef struct {
@@ -1056,6 +1078,7 @@ make_new_set(PyTypeObject *type, PyObject *iterable)
     so->hash = -1;
     so->finger = 0;
     so->weakreflist = NULL;
+    set_lock_new(so);
 
     if (iterable != NULL) {
         if (set_update_internal(so, iterable)) {
@@ -2278,18 +2301,6 @@ PyTypeObject PyFrozenSet_Type = {
     frozenset_new,                      /* tp_new */
     PyObject_GC_Del,                    /* tp_free */
 };
-
-/***** set_lock functions *************************************************/
-
-Py_LOCAL_INLINE(void) set_lock(PySetObject *d)
-{
-    furtex_lock(&(d->lock));
-}
-
-Py_LOCAL_INLINE(void) set_unlock(PySetObject *d)
-{
-    furtex_unlock(&(d->lock));
-}
 
 /***** C API functions *************************************************/
 
