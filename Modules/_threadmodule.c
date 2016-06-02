@@ -1170,8 +1170,9 @@ A thread's identity may be reused for another thread after it exits.");
 static PyObject *
 thread__count(PyObject *self)
 {
+    PyObject* result = NULL;
     module_lock();
-    PyObject* result = PyLong_FromLong(nb_threads);
+    result = PyLong_FromLong(nb_threads);
     module_unlock();
     return result;
 }
