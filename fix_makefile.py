@@ -80,7 +80,7 @@ def test_exe(path, name):
     except FileNotFoundError:
         error('Path to {} doesn\'t exist:'.format(name), path)
 
-    if not (s.st_mode & stat.S_IXOTH):
+    if not (s.st_mode & stat.S_IXUSR):
         error('{} specified isn\'t executable:'.format(name), path)
 
 test_exe(path_to_python, "python")
