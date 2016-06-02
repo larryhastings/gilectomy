@@ -1585,7 +1585,7 @@ static struct PyModuleDef gcmodule = {
     NULL               /* m_free */
 };
 
-static furtex_t gc_furtex = { 0, 0, 0, "gc_lock" };
+static furtex_t gc_furtex = FURTEX_STATIC_INIT("gc lock");
 
 void gc_lock(void)
 {
