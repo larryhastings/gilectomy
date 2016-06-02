@@ -219,6 +219,25 @@ Py_LOCAL_INLINE(void) futex_stats(futex_t *f) {
 #endif /* FUTEX_WANT_STATS */
 }
 
+typedef struct {
+    uint64_t total_refcount_time;
+    uint64_t total_refcounts;
+} py_time_refcounts_t;
+
+extern py_time_refcounts_t py_time_refcounts;
+
+#define PY_TIME_REFCOUNTS_ZERO {0,0}
+
+Py_LOCAL_INLINE(void) py_time_refcounts_stats(void) {
+#ifdef PY_TIME_REFCOUNTS
+    if (py_time_refcounts.total_refcounts) {
+        printf("[py_incr/py_decr] %lu total py_incr/py_decr calls\n", py_time_refcounts.total_refcounts);
+        printf("[py_incr/py_decr] %lu total time spent in py_incr/py_decr, in cycles\n", py_time_refcounts.total_refcount_time);
+        printf("[py_incr/py_decr] %f total time spent in py_incr/py_decr, in seconds\n", py_time_refcounts.total_refcount_time / 2600000000.0);
+        printf("[py_incr/py_decr] %f average time for a py_incr/py_decr, in cycles\n", ((double)py_time_refcounts.total_refcount_time) / py_time_refcounts.total_refcounts);
+    }
+#endif /* PY_TIME_REFCOUNTS */
+}
 
 /*
 ** furtex
@@ -1014,9 +1033,6 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
 
 #ifdef PY_TIME_REFCOUNTS
 
-extern uint64_t total_refcount_time;
-extern uint64_t total_refcounts;
-
 Py_LOCAL_INLINE(int) __py_incref__(PyObject *o) {
     uint64_t start, delta;
     unsigned int _;
@@ -1024,8 +1040,8 @@ Py_LOCAL_INLINE(int) __py_incref__(PyObject *o) {
     start = __rdtscp(&_);
     __sync_fetch_and_add(&o->ob_refcnt, 1);
     delta = __rdtscp(&_) - start;
-    __sync_fetch_and_add(&total_refcount_time, delta);
-    __sync_fetch_and_add(&total_refcounts, 1);
+    __sync_fetch_and_add(&(py_time_refcounts.total_refcount_time), delta);
+    __sync_fetch_and_add(&(py_time_refcounts.total_refcounts), 1);
     return 1;
 }
 
@@ -1036,8 +1052,8 @@ Py_LOCAL_INLINE(void) __py_decref__(PyObject *o) {
     start = __rdtscp(&_);
     new_rc = __sync_sub_and_fetch(&(o->ob_refcnt), 1);
     delta = __rdtscp(&_) - start;
-    __sync_fetch_and_add(&total_refcount_time, delta);
-    __sync_fetch_and_add(&total_refcounts, 1);
+    __sync_fetch_and_add(&(py_time_refcounts.total_refcount_time), delta);
+    __sync_fetch_and_add(&(py_time_refcounts.total_refcounts), 1);
     if (new_rc != 0)
         _Py_CHECK_REFCNT(o)
     else
