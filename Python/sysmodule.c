@@ -1012,7 +1012,7 @@ Return the size of object in bytes.");
 static PyObject *
 sys_getrefcount(PyObject *self, PyObject *arg)
 {
-    return PyLong_FromSsize_t(arg->ob_refcnt);
+    return PyLong_FromSsize_t(Py_REFCNT(arg));
 }
 
 #ifdef Py_REF_DEBUG
