@@ -82,15 +82,21 @@ whose size is determined when the object is allocated.
 /* PyObject_HEAD defines the initial segment of every PyObject. */
 #define PyObject_HEAD                   PyObject ob_base;
 
+#if 0 /* ACTIVATE STATS */
+    /* Factor of two speed cost for PY_TIME_REFCOUNTS currently */
+    #define PY_TIME_REFCOUNTS
+    #define FUTEX_WANT_STATS
+    #define FURTEX_WANT_STATS
+    #define GC_TRACK_STATS
+#endif /* ACTIVATE STATS */
 
-/*
-** futex
-**
-** linux-specific fast userspace lock
-**
-** Yes, this futex/furtex stuff shouldn't just be plopped in the
-** middle of object.h.  We can find a better place for it later.
-*/
+#define CYCLES_PER_SEC 2600000000
+#define F_CYCLES_PER_SEC ((double)CYCLES_PER_SEC)
+
+#if defined(FUTEX_WANT_STATS) || defined(FURTEX_WANT_STATS)
+#define PyMAX(a, b) ((a)>(b)?(a):(b))
+#define PyMIN(a, b) ((a)<(b)?(a):(b))
+#endif /* FUTEX_WANT_STATS || FURTEX_WANT_STATS */
 
 #include <errno.h>
 #include <stdio.h>
@@ -98,6 +104,11 @@ whose size is determined when the object is allocated.
 #include <pyport.h>
 #include <inttypes.h>
 
+/*
+**
+** Yes, this futex / furtex stuff shouldn't just be plopped in the
+** middle of object.h.We can find a better place for it later.
+ */
 #include "lock.h"
 
 #define PyObject_HEAD_INIT(type)        \

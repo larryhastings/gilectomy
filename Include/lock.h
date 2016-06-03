@@ -12,6 +12,17 @@
 //  void futex_unlock_primitive(primitivelock_t *f) - unlocks a futex
 //  FUTEX_STATIC_INIT(description) - statically initalizes a futex with a description
 
+
+/*
+** futex
+**
+** linux-specific fast userspace lock
+**
+** Yes, this futex/furtex stuff shouldn't just be plopped in the
+** middle of object.h.  We can find a better place for it later.
+*/
+
+
 #if defined(FUTEX_WANT_STATS) || defined(FURTEX_WANT_STATS)
 #define PyMAX(a, b) ((a)>(b)?(a):(b))
 #define PyMIN(a, b) ((a)<(b)?(a):(b))
