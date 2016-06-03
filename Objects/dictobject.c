@@ -188,13 +188,11 @@ static PyObject _dummy_struct;
 
 #define dummy (&_dummy_struct)
 
-#ifdef Py_REF_DEBUG
 PyObject *
 _PyDict_Dummy(void)
 {
     return dummy;
 }
-#endif
 
 /* forward declarations */
 static PyDictKeyEntry *lookdict(PyDictObject *mp, PyObject *key,
@@ -4240,6 +4238,6 @@ static PyTypeObject PyDictDummy_Type = {
 
 static PyObject _dummy_struct = {
   _PyObject_EXTRA_INIT
-  2, &PyDictDummy_Type
+  NULL, &PyDictDummy_Type
 };
 

@@ -65,7 +65,6 @@ whose size is determined when the object is allocated.
 #error Py_LIMITED_API is incompatible with Py_DEBUG, Py_TRACE_REFS, and Py_REF_DEBUG
 #endif
 
-
 #ifdef Py_TRACE_REFS
 /* Define pointers to support a doubly-linked list of all live heap objects. */
 #define _PyObject_HEAD_EXTRA            \
@@ -453,7 +452,7 @@ Py_LOCAL_INLINE(void) furtex_stats(furtex_t *f) {
  */
 typedef struct _object {
     _PyObject_HEAD_EXTRA
-    Py_ssize_t ob_refcnt_ptr;
+    Py_ssize_t *ob_refcnt_ptr;
     struct _typeobject *ob_type;
 } PyObject;
 
@@ -462,8 +461,11 @@ typedef struct {
     Py_ssize_t ob_size; /* Number of items in variable part */
 } PyVarObject;
 
-#define Py_REFCNT(ob)           ((const Py_ssize_t)(((PyObject*)(ob))->ob_refcnt_ptr))
-#define _Py_REFCNT(ob)          (((PyObject*)(ob))->ob_refcnt_ptr)
+void _PyRefcount_New(PyObject *);
+void _PyRefcount_Del(PyObject *);
+
+#define Py_REFCNT(ob)           ((const Py_ssize_t)*(((PyObject*)(ob))->ob_refcnt_ptr))
+#define _Py_REFCNT(ob)          (*((PyObject*)(ob))->ob_refcnt_ptr)
 #define Py_SET_REFCNT(ob, val)  (_Py_REFCNT(ob) = (val))
 #define Py_TYPE(ob)             (((PyObject*)(ob))->ob_type)
 #define Py_SIZE(ob)             (((PyVarObject*)(ob))->ob_size)
@@ -1058,11 +1060,12 @@ you can count such references to the type object.)
  * e.g, defining _Py_NewReference five different times in a maze of nested
  * #ifdefs (we used to do that -- it was impenetrable).
  */
+PyAPI_FUNC(PyObject *) _PyDict_Dummy(void);
+
 #ifdef Py_REF_DEBUG
 PyAPI_DATA(Py_ssize_t) _Py_RefTotal;
 PyAPI_FUNC(void) _Py_NegativeRefcount(const char *fname,
                                             int lineno, PyObject *op);
-PyAPI_FUNC(PyObject *) _PyDict_Dummy(void);
 PyAPI_FUNC(Py_ssize_t) _Py_GetRefTotal(void);
 #define _Py_INC_REFTOTAL        _Py_RefTotal++
 #define _Py_DEC_REFTOTAL        _Py_RefTotal--
@@ -1115,9 +1118,11 @@ PyAPI_FUNC(void) _Py_AddToAllObjects(PyObject *, int force);
 #define _Py_NewReference(op) (                          \
     _Py_INC_TPALLOCS(op) _Py_COUNT_ALLOCS_COMMA         \
     _Py_INC_REFTOTAL  _Py_REF_DEBUG_COMMA               \
-    Py_SET_REFCNT(op, 1))
+    _PyRefcount_New(op))
 
-#define _Py_ForgetReference(op) _Py_INC_TPFREES(op)
+#define _Py_ForgetReference(op) (                       \
+    _Py_INC_TPFREES(op) _Py_COUNT_ALLOCS_COMMA          \
+    _PyRefcount_Del(op))
 
 #ifdef Py_LIMITED_API
 PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
@@ -1127,6 +1132,9 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
     (*Py_TYPE(op)->tp_dealloc)((PyObject *)(op)))
 #endif
 #endif /* !Py_TRACE_REFS */
+
+#define _Py_MaybeNewReference(op) (                     \
+    ((PyObject *)(op))->ob_refcnt_ptr == NULL ? _Py_NewReference(op) : 0)
 
 #ifdef PY_TIME_REFCOUNTS
 

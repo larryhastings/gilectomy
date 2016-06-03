@@ -3,6 +3,7 @@
 
 #include "Python.h"
 #include "frameobject.h"
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -1518,7 +1519,7 @@ PyTypeObject _PyNone_Type = {
 
 PyObject _Py_NoneStruct = {
   _PyObject_EXTRA_INIT
-  1, &_PyNone_Type
+  NULL, &_PyNone_Type
 };
 
 /* NotImplemented is an object that can be used to signal that an
@@ -1603,12 +1604,20 @@ PyTypeObject _PyNotImplemented_Type = {
 
 PyObject _Py_NotImplementedStruct = {
     _PyObject_EXTRA_INIT
-    1, &_PyNotImplemented_Type
+    NULL, &_PyNotImplemented_Type
 };
 
 void
 _Py_ReadyTypes(void)
 {
+    _Py_NewReference(Py_False);
+    _Py_NewReference(Py_True);
+    _Py_NewReference(Py_None);
+    _Py_NewReference(Py_NotImplemented);
+    _Py_NewReference(Py_Ellipsis);
+    _Py_NewReference(_PyDict_Dummy());
+    _Py_NewReference(_PySet_Dummy);
+
     if (PyType_Ready(&PyBaseObject_Type) < 0)
         Py_FatalError("Can't initialize object type");
 
@@ -1822,8 +1831,6 @@ _Py_ReadyTypes(void)
     if (PyType_Ready(&_PyCoroWrapper_Type) < 0)
         Py_FatalError("Can't initialize coroutine wrapper type");
 
-    _Py_NewReference(Py_False);
-    _Py_NewReference(Py_True);
 }
 
 
@@ -2133,3 +2140,73 @@ _Py_Dealloc(PyObject *op)
 #ifdef __cplusplus
 }
 #endif
+
+/* TODO(twouters): refactor into a separate file */
+
+/* Remote refcount management */
+
+#define REFCOUNTLINKS_PER_PAGE 32768
+#define LAST_REFCOUNTLINK (REFCOUNTLINKS_PER_PAGE - 1)
+
+typedef union refcountlink {
+  Py_ssize_t refcount;
+  union refcountlink *link;
+} refcountlink;
+
+refcountlink *next_free = NULL;
+refcountlink *first_page = NULL;
+refcountlink *last_page = NULL;
+
+static futex_t refcountlinks_lock = FUTEX_STATIC_INIT("refcountlinks lock");
+
+static void
+alloc_refcount_links(void)
+{
+    ptrdiff_t diff;
+    int i;
+    refcountlink *new_page;
+
+    new_page = PyMem_MALLOC(REFCOUNTLINKS_PER_PAGE * sizeof(refcountlink));
+    if (new_page == NULL) {
+        Py_FatalError("Unable to allocate memory for refcounts");
+    }
+    if (first_page == NULL)
+        first_page = new_page;
+    if (last_page != NULL)
+        last_page[LAST_REFCOUNTLINK].link = new_page;
+    new_page[0].link = last_page;
+    last_page = new_page;
+    diff = &new_page[1] - &new_page[0];
+    for (i = 1; i < REFCOUNTLINKS_PER_PAGE - 1; i++)
+        new_page[i].link = &new_page[i] + diff;
+    new_page[LAST_REFCOUNTLINK].link = NULL;
+    next_free = &new_page[1];
+}
+
+void
+_PyRefcount_New(PyObject *ob)
+{
+    refcountlink *link;
+    futex_lock(&refcountlinks_lock);
+    if (next_free == NULL)
+        alloc_refcount_links();
+    if (next_free == NULL)
+        abort();
+    link = next_free;
+    next_free = link->link;
+    ob->ob_refcnt_ptr = &(link->refcount);
+    Py_SET_REFCNT(ob, 1);
+    futex_unlock(&refcountlinks_lock);
+}
+
+void
+_PyRefcount_Del(PyObject *ob)
+{
+    refcountlink *link = (refcountlink *)ob->ob_refcnt_ptr;
+    assert(Py_REFCNT(ob) == 0);
+    ob->ob_refcnt_ptr = NULL;
+    futex_lock(&refcountlinks_lock);
+    link->link = next_free;
+    next_free = link;
+    futex_unlock(&refcountlinks_lock);
+}

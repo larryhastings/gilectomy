@@ -33,9 +33,9 @@ PyModuleDef_Init(struct PyModuleDef* def)
 {
     if (PyType_Ready(&PyModuleDef_Type) < 0)
          return NULL;
+    _Py_MaybeNewReference(def);
     if (def->m_base.m_index == 0) {
         max_module_number++;
-        Py_SET_REFCNT(def, 1);
         Py_TYPE(def) = &PyModuleDef_Type;
         def->m_base.m_index = max_module_number;
     }
