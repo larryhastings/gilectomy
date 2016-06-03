@@ -273,6 +273,21 @@ Py_LOCAL_INLINE(void) futex_reset_stats(futex_t *f) {
 #endif /* FUTEX_WANT_STATS */
 }
 
+Py_LOCAL_INLINE(float) seconds_from_cycles(uint64_t cycles) {
+#ifdef __APPLE__
+    static double to_nano = -1;
+    mach_timebase_info_data_t sTimebaseInfo;
+
+    if (to_nano < 0) {
+        mach_timebase_info(&sTimebaseInfo);
+        to_nano = (float) sTimebaseInfo.numer / (float) sTimebaseInfo.denom;
+    }
+    return cycles * to_nano / 1000000000;
+#else
+    return cycles / F_CYCLES_PER_SEC;
+#endif
+}
+
 Py_LOCAL_INLINE(void) futex_stats(futex_t *f) {
 #ifdef FUTEX_WANT_STATS
     printf("[%s] %ld total locks\n", f->description, (long)(f->no_contention_count + f->contention_count));
@@ -280,7 +295,7 @@ Py_LOCAL_INLINE(void) futex_stats(futex_t *f) {
     printf("[%s] %ld locks with contention\n", f->description, (long)f->contention_count);
     if (f->contention_count) {
         printf("[%s] %ld contention total delay in cycles\n", f->description, (long)f->contention_total_delay);
-        printf("[%s] %f contention total delay in cpu-seconds\n", f->description, f->contention_total_delay / F_CYCLES_PER_SEC);
+        printf("[%s] %f contention total delay in cpu-seconds\n", f->description, seconds_from_cycles(f->contention_total_delay));
         printf("[%s] %f contention average delay in cycles\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
         printf("[%s] %ld contention max delay in cycles\n", f->description, (long)f->contention_max_delta);
     }
@@ -325,9 +340,9 @@ Py_LOCAL_INLINE(void) py_time_refcounts_persist(py_time_refcounts_t *t) {
 Py_LOCAL_INLINE(void) py_time_refcounts_stats(void) {
 #ifdef PY_TIME_REFCOUNTS
     if (py_time_refcounts.total_refcounts) {
-        printf("[py_incr/py_decr] %lu total calls\n", py_time_refcounts.total_refcounts);
-        printf("[py_incr/py_decr] %lu total time spent, in cycles\n", py_time_refcounts.total_refcount_time);
-        printf("[py_incr/py_decr] %f total time spent, in seconds\n", py_time_refcounts.total_refcount_time / 2600000000.0);
+        printf("[py_incr/py_decr] %lu total calls\n", (unsigned long)py_time_refcounts.total_refcounts);
+        printf("[py_incr/py_decr] %lu total time spent, in cycles\n", (unsigned long)py_time_refcounts.total_refcount_time);
+        printf("[py_incr/py_decr] %f total time spent, in seconds\n", seconds_from_cycles(py_time_refcounts.total_refcount_time));
         printf("[py_incr/py_decr] %f average cycles for a py_incr/py_decr\n", ((double)py_time_refcounts.total_refcount_time) / py_time_refcounts.total_refcounts);
     }
 #endif /* PY_TIME_REFCOUNTS */
@@ -372,7 +387,6 @@ Py_LOCAL_INLINE(void) _furtex_lock(furtex_t *f, const char *file, int line) {
     pthread_t tid = pthread_self();
 #ifdef FURTEX_WANT_STATS
     uint64_t start, delta;
-    unsigned int _;
 #endif /* FURTEX_WANT_STATS */
     if (f->count && pthread_equal(f->tid, tid)) {
         f->count++;
