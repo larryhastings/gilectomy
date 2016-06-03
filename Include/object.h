@@ -484,12 +484,17 @@ typedef struct {
     Py_ssize_t ob_size; /* Number of items in variable part */
 } PyVarObject;
 
+/* API Functions for allocating the refcount. */
 void _PyRefcount_New(PyObject *);
 void _PyRefcount_Del(PyObject *);
 
+/* Read-only access to the refcount (for most uses). */
 #define Py_REFCNT(ob)           ((const Py_ssize_t)*(((PyObject*)(ob))->ob_refcnt_ptr))
+/* Read-write access to the refcount (without checking pointer validity). */
 #define _Py_REFCNT(ob)          (*((PyObject*)(ob))->ob_refcnt_ptr)
+/* Assignment to refcount, without checking pointer validity. */
 #define Py_SET_REFCNT(ob, val)  (_Py_REFCNT(ob) = (val))
+
 #define Py_TYPE(ob)             (((PyObject*)(ob))->ob_type)
 #define Py_SIZE(ob)             (((PyVarObject*)(ob))->ob_size)
 
@@ -1156,6 +1161,9 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
 #endif
 #endif /* !Py_TRACE_REFS */
 
+/* For PyModuleDefs and other objects that are statically initialized,
+ * allocate the refcount iff it isn't already allocated. Can't do this in
+ * the general case as the object may consist of uninitialized memory. */
 #define _Py_MaybeNewReference(op) (                     \
     ((PyObject *)(op))->ob_refcnt_ptr == NULL ? _Py_NewReference(op) : 0)
 
