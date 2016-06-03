@@ -263,8 +263,8 @@ PyDict_Fini(void)
 #define DK_DEBUG_INCREF _Py_INC_REFTOTAL _Py_REF_DEBUG_COMMA
 #define DK_DEBUG_DECREF _Py_DEC_REFTOTAL _Py_REF_DEBUG_COMMA
 
-#define DK_INCREF(dk) (DK_DEBUG_INCREF __sync_add_and_fetch(&((dk)->dk_refcnt), 1))
-#define DK_DECREF(dk) if (DK_DEBUG_DECREF (__sync_sub_and_fetch(&((dk)->dk_refcnt), 1) == 0)) free_keys_object(dk)
+#define DK_INCREF(dk) (DK_DEBUG_INCREF ATOMIC_INC(&((dk)->dk_refcnt)))
+#define DK_DECREF(dk) if (DK_DEBUG_DECREF (ATOMIC_DEC(&((dk)->dk_refcnt)) == 0)) free_keys_object(dk)
 #define DK_SIZE(dk) ((dk)->dk_size)
 #define DK_MASK(dk) (((dk)->dk_size)-1)
 #define IS_POWER_OF_2(x) (((x) & (x-1)) == 0)
@@ -323,7 +323,7 @@ Py_LOCAL_INLINE(void) dict_lock_dealloc(PyDictObject *d)
 {
 }
 
-Py_LOCAL_INLINE(void) dict_lock(PyDictObject *d)
+void dict_lock(PyDictObject *d)
 {
     // printf("%5d: locking %p\n", getpid(), d);
     furtex_lock(&(d->ma_lock));
@@ -331,7 +331,7 @@ Py_LOCAL_INLINE(void) dict_lock(PyDictObject *d)
     // printf("%5d:  locked %p\n", getpid(), d);
 }
 
-Py_LOCAL_INLINE(void) dict_unlock(PyDictObject *d)
+void dict_unlock(PyDictObject *d)
 {
     // printf("%5d:  unlock %p\n", getpid(), d);
     furtex_unlock(&(d->ma_lock));

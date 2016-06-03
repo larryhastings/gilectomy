@@ -323,7 +323,7 @@ _PyEval_FiniThreads(void)
     if (!gil_created())
         return;
     destroy_gil();
-    assert(!gil_created());
+    //assert(!gil_created());
 }
 
 void
