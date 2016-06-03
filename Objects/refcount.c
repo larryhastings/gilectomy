@@ -68,3 +68,19 @@ void __py_decref__(PyObject *o) {
 }
 
 #endif /* PY_TIME_REFCOUNTS */
+
+void furtex_stats(furtex_t *f) {
+#ifdef FURTEX_WANT_STATS
+    printf("[%s] %ld total locks\n", f->description, (long)(f->no_contention_count + f->contention_count));
+    printf("[%s] %ld locks without contention\n", f->description, (long)f->no_contention_count);
+    printf("[%s] %ld locks with contention\n", f->description, (long)f->contention_count);
+    if (f->contention_count) {
+        printf("[%s] %ld contention total delay in cycles\n", f->description, (long)f->contention_total_delay);
+        printf("[%s] %f contention total delay in cpu-seconds\n", f->description, f->contention_total_delay / 2600000000.0);
+        printf("[%s] %f contention average delay in cycles\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
+        printf("[%s] %ld contention max delay in cycles\n", f->description, (long)f->contention_max_delta);
+    }
+    furtex_reset_stats(f);
+#endif /* FURTEX_WANT_STATS */
+}
+

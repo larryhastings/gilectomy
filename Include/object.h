@@ -92,9 +92,9 @@ whose size is determined when the object is allocated.
 ** middle of object.h.  We can find a better place for it later.
 */
 
+#if 0 /* ACTIVATE STATS */
     /* Factor of two speed cost for PY_TIME_REFCOUNTS currently */
     #define PY_TIME_REFCOUNTS
-#if 0 /* ACTIVATE STATS */
     #define FUTEX_WANT_STATS
     #define FURTEX_WANT_STATS
     #define GC_TRACK_STATS
@@ -395,25 +395,7 @@ Py_LOCAL_INLINE(void) furtex_reset_stats(furtex_t *f) {
 #endif /* FURTEX_WANT_STATS */
 }
 
-Py_LOCAL_INLINE(void) furtex_stats(furtex_t *f) {
-#ifdef FURTEX_WANT_STATS
-    printf("[%s] %ld total locks\n", f->description, (long)(f->no_contention_count + f->contention_count));
-    printf("[%s] %ld locks without contention\n", f->description, (long)f->no_contention_count);
-    printf("[%s] %ld locks with contention\n", f->description, (long)f->contention_count);
-    if (f->contention_count) {
-        printf("[%s] %ld contention total delay in cycles\n", f->description, (long)f->contention_total_delay);
-        printf("[%s] %f contention total delay in cpu-seconds\n", f->description, f->contention_total_delay / 2600000000.0);
-        printf("[%s] %f contention average delay in cycles\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
-        printf("[%s] %ld contention max delay in cycles\n", f->description, (long)f->contention_max_delta);
-    }
-    furtex_reset_stats(f);
-/*
-#else
-    printf("[furtex stats disabled at compile-time]\n");
-*/
-#endif /* FURTEX_WANT_STATS */
-}
-
+void furtex_stats(furtex_t *f);
 
 #define PyObject_HEAD_INIT(type)        \
     { _PyObject_EXTRA_INIT              \
