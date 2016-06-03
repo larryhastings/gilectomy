@@ -98,10 +98,10 @@ whose size is determined when the object is allocated.
     #define FUTEX_WANT_STATS
     #define FURTEX_WANT_STATS
     #define GC_TRACK_STATS
-
-    #define CYCLES_PER_SEC 2600000000
-    #define F_CYCLES_PER_SEC ((double)CYCLES_PER_SEC)
 #endif /* ACTIVATE STATS */
+
+#define CYCLES_PER_SEC 2600000000
+#define F_CYCLES_PER_SEC ((double)CYCLES_PER_SEC)
 
 #if defined(FUTEX_WANT_STATS) || defined(FURTEX_WANT_STATS)
 #define PyMAX(a, b) ((a)>(b)?(a):(b))
