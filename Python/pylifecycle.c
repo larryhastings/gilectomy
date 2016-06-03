@@ -344,6 +344,9 @@ _Py_InitializeEx_Private(int install_sigs, int install_importlib)
     if (!_PyFrame_Init())
         Py_FatalError("Py_Initialize: can't init frames");
 
+    if (!_PySet_Init())
+        Py_FatalError("Py_Initialize: can't init sets");
+
     if (!_PyLong_Init())
         Py_FatalError("Py_Initialize: can't init longs");
 
