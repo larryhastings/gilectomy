@@ -43,9 +43,6 @@ _Py_IDENTIFIER(stderr);
 extern "C" {
 #endif
 
-uint64_t total_refcount_time = 0;
-uint64_t total_refcounts = 0;
-
 extern wchar_t *Py_GetPath(void);
 
 extern grammar _PyParser_Grammar; /* From graminit.c */
@@ -319,6 +316,7 @@ _Py_InitializeEx_Private(int install_sigs, int install_importlib)
         Py_HashRandomizationFlag = add_flag(Py_HashRandomizationFlag, p);
 
     _PyRandom_Init();
+    py_time_refcounts_setzero(&py_time_refcounts);
 
     interp = PyInterpreterState_New();
     if (interp == NULL)
@@ -563,12 +561,6 @@ Py_FinalizeEx(void)
     tupleobject_lock_stats();
     // furtex_stats(&_malloc_lock);
     }
-    if (total_refcounts) {
-        printf("[py_incr/py_decr] %lu total py_incr/py_decr calls\n", total_refcounts);
-        printf("[py_incr/py_decr] %lu total time spent in py_incr/py_decr, in cycles\n", total_refcount_time);
-        printf("[py_incr/py_decr] %f total time spent in py_incr/py_decr, in seconds\n", total_refcount_time / 2600000000.0);
-        printf("[py_incr/py_decr] %f average time for a py_incr/py_decr, in cycles\n", ((double)total_refcount_time) / total_refcounts);
-    }
 
     /* Remaining threads (e.g. daemon threads) will automatically exit
        after taking the GIL (in PyEval_RestoreThread()). */
@@ -605,6 +597,7 @@ Py_FinalizeEx(void)
 #endif
     /* Destroy all modules */
     PyImport_Cleanup();
+    py_time_refcounts_stats();
 
     /* Flush sys.stdout and sys.stderr (again, in case more was printed) */
     if (flush_std_files() < 0) {

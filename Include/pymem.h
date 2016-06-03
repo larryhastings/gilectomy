@@ -181,9 +181,9 @@ PyAPI_FUNC(void) PyMem_SetAllocator(PyMemAllocatorDomain domain,
 PyAPI_FUNC(void) PyMem_SetupDebugHooks(void);
 #endif
 
-PyAPI_FUNC(long) Py_AtomicInc(long* value);
-PyAPI_FUNC(long) Py_AtomicDec(long* value);
-PyAPI_FUNC(long) Py_AtomicAdd(long* to, long value);
+PyAPI_FUNC(Py_ssize_t) Py_AtomicInc(Py_ssize_t* value);
+PyAPI_FUNC(Py_ssize_t) Py_AtomicDec(Py_ssize_t* value);
+PyAPI_FUNC(Py_ssize_t) Py_AtomicAdd(Py_ssize_t* to, Py_ssize_t value);
 
 
 #ifdef __cplusplus

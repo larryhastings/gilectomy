@@ -93,26 +93,57 @@ whose size is determined when the object is allocated.
 */
 
 #if 0 /* ACTIVATE STATS */
+    /* Factor of two speed cost for PY_TIME_REFCOUNTS currently */
+    #define PY_TIME_REFCOUNTS
     #define FUTEX_WANT_STATS
     #define FURTEX_WANT_STATS
     #define GC_TRACK_STATS
-    #define PY_TIME_REFCOUNTS
 
     #define CYCLES_PER_SEC 2600000000
     #define F_CYCLES_PER_SEC ((double)CYCLES_PER_SEC)
 #endif /* ACTIVATE STATS */
-
-#if defined(FUTEX_WANT_STATS) || defined(FURTEX_WANT_STATS)
-#define PyMAX(a, b) ((a)>(b)?(a):(b))
-#define PyMIN(a, b) ((a)<(b)?(a):(b))
-#endif /* FUTEX_WANT_STATS || FURTEX_WANT_STATS */
-
 
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <pyport.h>
 #include <inttypes.h>
+
+typedef struct {
+    uint64_t total_refcount_time;
+    uint64_t total_refcounts;
+} py_time_refcounts_t;
+
+extern py_time_refcounts_t py_time_refcounts;
+
+Py_LOCAL_INLINE(void) py_time_refcounts_setzero(py_time_refcounts_t *t) {
+#ifdef PY_TIME_REFCOUNTS
+    t->total_refcount_time = 0;
+    t->total_refcounts = 0;
+#endif /* PY_TIME_REFCOUNTS */
+}
+
+py_time_refcounts_t* PyState_GetThisThreadPyTimeRefcounts(void);
+
+Py_LOCAL_INLINE(void) py_time_refcounts_persist(py_time_refcounts_t *t) {
+#ifdef PY_TIME_REFCOUNTS
+    py_time_refcounts_t* const zero = 0;
+    PY_TIME_FETCH_AND_ADD(zero, total_refcount_time, t->total_refcount_time);
+    PY_TIME_FETCH_AND_ADD(zero, total_refcounts, t->total_refcounts);
+    py_time_refcounts_setzero(t);
+#endif /* PY_TIME_REFCOUNTS */
+}
+
+Py_LOCAL_INLINE(void) py_time_refcounts_stats(void) {
+#ifdef PY_TIME_REFCOUNTS
+    if (py_time_refcounts.total_refcounts) {
+        printf("[py_incr/py_decr] %lu total calls\n", py_time_refcounts.total_refcounts);
+        printf("[py_incr/py_decr] %lu total time spent, in cycles\n", py_time_refcounts.total_refcount_time);
+        printf("[py_incr/py_decr] %f total time spent, in seconds\n", py_time_refcounts.total_refcount_time / 2600000000.0);
+        printf("[py_incr/py_decr] %f average cycles for a py_incr/py_decr\n", ((double)py_time_refcounts.total_refcount_time) / py_time_refcounts.total_refcounts);
+    }
+#endif /* PY_TIME_REFCOUNTS */
+}
 
 #include "lock.h"
 
@@ -814,30 +845,27 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
 
 #ifdef PY_TIME_REFCOUNTS
 
-extern uint64_t total_refcount_time;
-extern uint64_t total_refcounts;
-
 Py_LOCAL_INLINE(int) __py_incref__(PyObject *o) {
     uint64_t start, delta;
-    unsigned int _;
+    py_time_refcounts_t *t = PyState_GetThisThreadPyTimeRefcounts();
     _Py_INC_REFTOTAL;
-    start = __rdtscp(&_);
+    start = fast_get_cycles();
     ATOMIC_INC(&o->ob_refcnt);
-    delta = __rdtscp(&_) - start;
-	ATOMIC_ADD(&total_refcount_time, delta);
-	ATOMIC_INC(&total_refcounts);
+    delta = fast_get_cycles() - start;
+    PY_TIME_FETCH_AND_ADD(t, total_refcount_time, delta);
+    PY_TIME_FETCH_AND_ADD(t, total_refcounts, 1);
     return 1;
 }
 
 Py_LOCAL_INLINE(void) __py_decref__(PyObject *o) {
     uint64_t start, delta, new_rc;
-    unsigned int _;
+    py_time_refcounts_t *t = PyState_GetThisThreadPyTimeRefcounts();
     _Py_DEC_REFTOTAL;
-    start = __rdtscp(&_);
-    new_rc = ATOMIC_DEC(&(o->ob_refcnt));
-    delta = __rdtscp(&_) - start;
-	ATOMIC_ADD(&total_refcount_time, delta);
-	ATOMIC_INC(&total_refcounts, 1);
+    start = fast_get_cycles();
+    new_rc = ATOMIC_DEC(&(o->ob_refcnt), 1);
+    delta = fast_get_cycles() - start;
+    PY_TIME_FETCH_AND_ADD(t, total_refcount_time, delta);
+    PY_TIME_FETCH_AND_ADD(t, total_refcounts, 1);
     if (new_rc != 0)
         _Py_CHECK_REFCNT(o)
     else
