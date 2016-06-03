@@ -92,58 +92,11 @@ whose size is determined when the object is allocated.
 ** middle of object.h.  We can find a better place for it later.
 */
 
-#if 0 /* ACTIVATE STATS */
-    /* Factor of two speed cost for PY_TIME_REFCOUNTS currently */
-    #define PY_TIME_REFCOUNTS
-    #define FUTEX_WANT_STATS
-    #define FURTEX_WANT_STATS
-    #define GC_TRACK_STATS
-
-    #define CYCLES_PER_SEC 2600000000
-    #define F_CYCLES_PER_SEC ((double)CYCLES_PER_SEC)
-#endif /* ACTIVATE STATS */
-
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <pyport.h>
 #include <inttypes.h>
-
-typedef struct {
-    uint64_t total_refcount_time;
-    uint64_t total_refcounts;
-} py_time_refcounts_t;
-
-extern py_time_refcounts_t py_time_refcounts;
-
-Py_LOCAL_INLINE(void) py_time_refcounts_setzero(py_time_refcounts_t *t) {
-#ifdef PY_TIME_REFCOUNTS
-    t->total_refcount_time = 0;
-    t->total_refcounts = 0;
-#endif /* PY_TIME_REFCOUNTS */
-}
-
-py_time_refcounts_t* PyState_GetThisThreadPyTimeRefcounts(void);
-
-Py_LOCAL_INLINE(void) py_time_refcounts_persist(py_time_refcounts_t *t) {
-#ifdef PY_TIME_REFCOUNTS
-    py_time_refcounts_t* const zero = 0;
-    PY_TIME_FETCH_AND_ADD(zero, total_refcount_time, t->total_refcount_time);
-    PY_TIME_FETCH_AND_ADD(zero, total_refcounts, t->total_refcounts);
-    py_time_refcounts_setzero(t);
-#endif /* PY_TIME_REFCOUNTS */
-}
-
-Py_LOCAL_INLINE(void) py_time_refcounts_stats(void) {
-#ifdef PY_TIME_REFCOUNTS
-    if (py_time_refcounts.total_refcounts) {
-        printf("[py_incr/py_decr] %lu total calls\n", py_time_refcounts.total_refcounts);
-        printf("[py_incr/py_decr] %lu total time spent, in cycles\n", py_time_refcounts.total_refcount_time);
-        printf("[py_incr/py_decr] %f total time spent, in seconds\n", py_time_refcounts.total_refcount_time / 2600000000.0);
-        printf("[py_incr/py_decr] %f average cycles for a py_incr/py_decr\n", ((double)py_time_refcounts.total_refcount_time) / py_time_refcounts.total_refcounts);
-    }
-#endif /* PY_TIME_REFCOUNTS */
-}
 
 #include "lock.h"
 
