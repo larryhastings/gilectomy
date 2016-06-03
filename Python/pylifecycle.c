@@ -43,8 +43,6 @@ _Py_IDENTIFIER(stderr);
 extern "C" {
 #endif
 
-py_time_refcounts_t py_time_refcounts = PY_TIME_REFCOUNTS_ZERO;
-
 extern wchar_t *Py_GetPath(void);
 
 extern grammar _PyParser_Grammar; /* From graminit.c */
@@ -318,6 +316,7 @@ _Py_InitializeEx_Private(int install_sigs, int install_importlib)
         Py_HashRandomizationFlag = add_flag(Py_HashRandomizationFlag, p);
 
     _PyRandom_Init();
+    py_time_refcounts_setzero(&py_time_refcounts);
 
     interp = PyInterpreterState_New();
     if (interp == NULL)
@@ -563,8 +562,6 @@ Py_FinalizeEx(void)
     // furtex_stats(&_malloc_lock);
     }
 
-    py_time_refcounts_stats();
-
     /* Remaining threads (e.g. daemon threads) will automatically exit
        after taking the GIL (in PyEval_RestoreThread()). */
     _Py_Finalizing = tstate;
@@ -600,6 +597,7 @@ Py_FinalizeEx(void)
 #endif
     /* Destroy all modules */
     PyImport_Cleanup();
+    py_time_refcounts_stats();
 
     /* Flush sys.stdout and sys.stderr (again, in case more was printed) */
     if (flush_std_files() < 0) {
