@@ -1657,6 +1657,9 @@ PyInit_gc(void)
     ADD_INT(DEBUG_SAVEALL);
     ADD_INT(DEBUG_LEAK);
 #undef ADD_INT
+
+    gc_unlock();
+    
     return m;
 }
 
