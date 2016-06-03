@@ -450,6 +450,7 @@ OBJECT_OBJS=	\
 		Objects/obmalloc.o \
 		Objects/capsule.o \
 		Objects/rangeobject.o \
+		Objects/refcount.o \
 		Objects/setobject.o \
 		Objects/sliceobject.o \
 		Objects/structseq.o \
