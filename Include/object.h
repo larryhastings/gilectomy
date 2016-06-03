@@ -154,9 +154,6 @@ Py_LOCAL_INLINE(int) syscall_futex(int *futex, int operation, int value) {
     (syscall_futex(futex, FUTEX_WAKE_PRIVATE, value))
 #endif
 
-#ifdef USE_PTHREAD_MUTEX
-
-#endif
 
 typedef struct {
 #ifdef USE_LINUX_FUTEX
@@ -194,9 +191,7 @@ Py_LOCAL_INLINE(void) futex_init(futex_t *f) {
 
 #ifdef USE_PTHREAD_MUTEX
     if (!f->initialized) {
-        pthread_mutex_t* mutex = &f->mutex;
-        pthread_mutex_init(mutex, NULL);
-        //fprintf(stderr, "first: %i\n", *((int*)mutex));
+        pthread_mutex_init(&f->mutex, NULL);
         f->initialized = 1;
     }
 #endif
@@ -227,8 +222,7 @@ Py_LOCAL_INLINE(void) futex_lock(futex_t *f) {
     }
 
     {
-        pthread_mutex_t* mutex = &f->mutex;
-        int r = pthread_mutex_lock(mutex);
+        int r = pthread_mutex_lock(&f->mutex);
         if ( r != 0 ) {
             fprintf(stderr, "pthread_mutex_lock failed: %s\n", strerror(r));
         }
@@ -260,8 +254,7 @@ Py_LOCAL_INLINE(void) futex_unlock(futex_t *f) {
 
 #ifdef USE_PTHREAD_MUTEX
     {
-        pthread_mutex_t* mutex = &f->mutex;
-        int r = pthread_mutex_unlock(mutex);
+        int r = pthread_mutex_unlock(&f->mutex);
         if ( r != 0 ) {
             fprintf(stderr, "pthread_mutex_unlock failed: %s\n", strerror(r));
         }
@@ -281,14 +274,14 @@ Py_LOCAL_INLINE(void) futex_reset_stats(futex_t *f) {
 
 Py_LOCAL_INLINE(void) futex_stats(futex_t *f) {
 #ifdef FUTEX_WANT_STATS
-    printf("[%s] %ld total locks\n", f->description, f->no_contention_count + f->contention_count);
-    printf("[%s] %ld locks without contention\n", f->description, f->no_contention_count);
-    printf("[%s] %ld locks with contention\n", f->description, f->contention_count);
+    printf("[%s] %ld total locks\n", f->description, (long)(f->no_contention_count + f->contention_count));
+    printf("[%s] %ld locks without contention\n", f->description, (long)f->no_contention_count);
+    printf("[%s] %ld locks with contention\n", f->description, (long)f->contention_count);
     if (f->contention_count) {
-        printf("[%s] %ld contention total delay in cycles\n", f->description, f->contention_total_delay);
+        printf("[%s] %ld contention total delay in cycles\n", f->description, (long)f->contention_total_delay);
         printf("[%s] %f contention total delay in cpu-seconds\n", f->description, f->contention_total_delay / F_CYCLES_PER_SEC);
         printf("[%s] %f contention average delay in cycles\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
-        printf("[%s] %ld contention max delay in cycles\n", f->description, f->contention_max_delta);
+        printf("[%s] %ld contention max delay in cycles\n", f->description, (long)f->contention_max_delta);
     }
     futex_reset_stats(f);
 /*
@@ -378,14 +371,14 @@ Py_LOCAL_INLINE(void) furtex_reset_stats(furtex_t *f) {
 
 Py_LOCAL_INLINE(void) furtex_stats(furtex_t *f) {
 #ifdef FURTEX_WANT_STATS
-    printf("[%s] %ld total locks\n", f->description, f->no_contention_count + f->contention_count);
-    printf("[%s] %ld locks without contention\n", f->description, f->no_contention_count);
-    printf("[%s] %ld locks with contention\n", f->description, f->contention_count);
+    printf("[%s] %ld total locks\n", f->description, (long)(f->no_contention_count + f->contention_count));
+    printf("[%s] %ld locks without contention\n", f->description, (long)f->no_contention_count);
+    printf("[%s] %ld locks with contention\n", f->description, (long)f->contention_count);
     if (f->contention_count) {
-        printf("[%s] %ld contention total delay in cycles\n", f->description, f->contention_total_delay);
+        printf("[%s] %ld contention total delay in cycles\n", f->description, (long)f->contention_total_delay);
         printf("[%s] %f contention total delay in cpu-seconds\n", f->description, f->contention_total_delay / 2600000000.0);
         printf("[%s] %f contention average delay in cycles\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
-        printf("[%s] %ld contention max delay in cycles\n", f->description, f->contention_max_delta);
+        printf("[%s] %ld contention max delay in cycles\n", f->description, (long)f->contention_max_delta);
     }
     furtex_reset_stats(f);
 /*
