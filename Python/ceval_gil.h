@@ -164,50 +164,6 @@ static void destroy_gil(void)
     _Py_ANNOTATE_RWLOCK_DESTROY(&gil_locked);
 }
 
-static void recreate_gil(void)
-{
-    return;
-    _Py_ANNOTATE_RWLOCK_DESTROY(&gil_locked);
-    /* XXX should we destroy the old OS resources here? */
-    create_gil();
-}
-
-static void drop_gil(PyThreadState *tstate)
-{
-    return;
-    if (!_Py_atomic_load_relaxed(&gil_locked))
-        Py_FatalError("drop_gil: GIL is not locked");
-    /* tstate is allowed to be NULL (early interpreter init) */
-    if (tstate != NULL) {
-        /* Sub-interpreter support: threads might have been switched
-           under our feet using PyThreadState_Swap(). Fix the GIL last
-           holder variable so that our heuristics work. */
-        _Py_atomic_store_relaxed(&gil_last_holder, (Py_uintptr_t)tstate);
-    }
-
-    MUTEX_LOCK(gil_mutex);
-    _Py_ANNOTATE_RWLOCK_RELEASED(&gil_locked, /*is_write=*/1);
-    _Py_atomic_store_relaxed(&gil_locked, 0);
-    COND_SIGNAL(gil_cond);
-    MUTEX_UNLOCK(gil_mutex);
-
-#ifdef FORCE_SWITCHING
-    if (_Py_atomic_load_relaxed(&gil_drop_request) && tstate != NULL) {
-        MUTEX_LOCK(switch_mutex);
-        /* Not switched yet => wait */
-        if ((PyThreadState*)_Py_atomic_load_relaxed(&gil_last_holder) == tstate) {
-        RESET_GIL_DROP_REQUEST();
-            /* NOTE: if COND_WAIT does not atomically start waiting when
-               releasing the mutex, another thread can run through, take
-               the GIL and drop it again, and reset the condition
-               before we even had a chance to wait for it. */
-            COND_WAIT(switch_cond, switch_mutex);
-    }
-        MUTEX_UNLOCK(switch_mutex);
-    }
-#endif
-}
-
 static void take_gil(PyThreadState *tstate)
 {
     int err;
