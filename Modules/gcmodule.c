@@ -912,7 +912,7 @@ collect(int generation, Py_ssize_t *n_collected, Py_ssize_t *n_uncollectable,
 
     struct gc_generation_stats *stats = &generation_stats[generation];
 
-    n_uncollectable = 0;  /* Never otherwise assigned */
+    *n_uncollectable = 0;  /* Never otherwise assigned */
     /* GILECTOMY: disable GC for now */
     return 0;
 

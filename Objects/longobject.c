@@ -78,7 +78,7 @@ _PyLong_Negate(PyLongObject **x_p)
     PyLongObject *x;
 
     x = (PyLongObject *)*x_p;
-    if (Py_REFCNT(x) == 1) {
+    if (Py_REFCNT((PyObject*) x) == 1) {
         Py_SIZE(x) = -Py_SIZE(x);
         return;
     }
@@ -4493,7 +4493,7 @@ _PyLong_GCD(PyObject *aarg, PyObject *barg)
         }
         if (c != NULL)
             Py_SIZE(c) = size_a;
-        else if (Py_REFCNT(a) == 1) {
+        else if (Py_REFCNT((PyObject*)a) == 1) {
             Py_INCREF(a);
             c = a;
         }
@@ -4506,7 +4506,7 @@ _PyLong_GCD(PyObject *aarg, PyObject *barg)
 
         if (d != NULL)
             Py_SIZE(d) = size_a;
-        else if (Py_REFCNT(b) == 1 && size_a <= alloc_b) {
+        else if (Py_REFCNT((PyObject*)b) == 1 && size_a <= alloc_b) {
             Py_INCREF(b);
             d = b;
             Py_SIZE(d) = size_a;
@@ -5361,7 +5361,7 @@ _PyLong_Init(void)
             /* _Py_NewReference sets the ref count to 1 but
              * the ref count might be larger. Set the refcnt
              * to the original refcnt + 1 */
-            Py_REFCNT(op) = refcnt + 1;
+            Py_REFCNT_Initialize(op, refcnt + 1);
             assert(Py_SIZE(op) == size);
             assert(v->ob_digit[0] == (digit)abs(ival));
         }

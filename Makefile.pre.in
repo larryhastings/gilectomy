@@ -315,6 +315,7 @@ PGSRCS=		\
 
 PGOBJS=		\
 		Objects/obmalloc.o \
+		Objects/refcount.o \
 		Python/dynamic_annotations.o \
 		Python/mysnprintf.o \
 		Python/pyctype.o \

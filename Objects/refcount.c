@@ -16,6 +16,8 @@ void py_time_refcounts_setzero(py_time_refcounts_t *t) {
 #endif /* PY_TIME_REFCOUNTS */
 }
 
+py_time_refcounts_t py_time_refcounts;
+
 py_time_refcounts_t* PyState_GetThisThreadPyTimeRefcounts(void);
 
 void py_time_refcounts_persist(py_time_refcounts_t *t) {
@@ -45,7 +47,7 @@ int __py_incref__(PyObject *o) {
     py_time_refcounts_t *t = PyState_GetThisThreadPyTimeRefcounts();
     _Py_INC_REFTOTAL;
     start = fast_get_cycles();
-    __sync_fetch_and_add(&o->ob_refcnt, 1);
+    __sync_fetch_and_add(&o->ob_refcnt.shared_refcnt, 1);
     delta = fast_get_cycles() - start;
     PY_TIME_FETCH_AND_ADD(t, total_refcount_time, delta);
     PY_TIME_FETCH_AND_ADD(t, total_refcounts, 1);
@@ -57,7 +59,7 @@ void __py_decref__(PyObject *o) {
     py_time_refcounts_t *t = PyState_GetThisThreadPyTimeRefcounts();
     _Py_DEC_REFTOTAL;
     start = fast_get_cycles();
-    new_rc = __sync_sub_and_fetch(&(o->ob_refcnt), 1);
+    new_rc = __sync_sub_and_fetch(&(o->ob_refcnt.shared_refcnt), 1);
     delta = fast_get_cycles() - start;
     PY_TIME_FETCH_AND_ADD(t, total_refcount_time, delta);
     PY_TIME_FETCH_AND_ADD(t, total_refcounts, 1);
@@ -82,5 +84,24 @@ void furtex_stats(furtex_t *f) {
     }
     furtex_reset_stats(f);
 #endif /* FURTEX_WANT_STATS */
+}
+
+void futex_stats(futex_t *f) {
+#ifdef FUTEX_WANT_STATS
+    printf("[%s] %ld total locks\n", f->description, (long)(f->no_contention_count + f->contention_count));
+    printf("[%s] %ld locks without contention\n", f->description, (long)f->no_contention_count);
+    printf("[%s] %ld locks with contention\n", f->description, (long)f->contention_count);
+    if (f->contention_count) {
+        printf("[%s] %ld contention total delay in cycles\n", f->description, (long)f->contention_total_delay);
+        printf("[%s] %f contention total delay in cpu-seconds\n", f->description, f->contention_total_delay / F_CYCLES_PER_SEC);
+        printf("[%s] %f contention average delay in cycles\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
+        printf("[%s] %ld contention max delay in cycles\n", f->description, (long)f->contention_max_delta);
+    }
+    futex_reset_stats(f);
+/*
+#else
+    printf("[futex stats disabled at compile-time]\n");
+*/
+#endif /* FUTEX_WANT_STATS */
 }
 

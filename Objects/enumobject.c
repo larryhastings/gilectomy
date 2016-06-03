@@ -102,7 +102,7 @@ enum_next_long(enumobject *en, PyObject* next_item)
         return NULL;
     en->en_longindex = stepped_up;
 
-    if (result->ob_refcnt == 1) {
+    if (Py_REFCNT(result) == 1) {
         Py_INCREF(result);
         Py_DECREF(PyTuple_GET_ITEM(result, 0));
         Py_DECREF(PyTuple_GET_ITEM(result, 1));
@@ -141,7 +141,7 @@ enum_next(enumobject *en)
     }
     en->en_index++;
 
-    if (result->ob_refcnt == 1) {
+    if (Py_REFCNT(result) == 1) {
         Py_INCREF(result);
         Py_DECREF(PyTuple_GET_ITEM(result, 0));
         Py_DECREF(PyTuple_GET_ITEM(result, 1));
