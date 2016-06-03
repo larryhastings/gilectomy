@@ -325,7 +325,7 @@ Py_LOCAL_INLINE(void) dict_lock_dealloc(PyDictObject *d)
 {
 }
 
-Py_LOCAL_INLINE(void) dict_lock(PyDictObject *d)
+void dict_lock(PyDictObject *d)
 {
     // printf("%5d: locking %p\n", getpid(), d);
     furtex_lock(&(d->ma_lock));
@@ -333,7 +333,7 @@ Py_LOCAL_INLINE(void) dict_lock(PyDictObject *d)
     // printf("%5d:  locked %p\n", getpid(), d);
 }
 
-Py_LOCAL_INLINE(void) dict_unlock(PyDictObject *d)
+void dict_unlock(PyDictObject *d)
 {
     // printf("%5d:  unlock %p\n", getpid(), d);
     furtex_unlock(&(d->ma_lock));

@@ -109,212 +109,12 @@ whose size is determined when the object is allocated.
 
 
 #include <errno.h>
-#include <linux/futex.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/mman.h>
-#include <sys/syscall.h>
-#include <sys/time.h>
-#include <sys/wait.h>
-#include <unistd.h>
 #include <pyport.h>
 #include <inttypes.h>
-#include <x86intrin.h>
 
-
-Py_LOCAL_INLINE(int) syscall_futex(int *futex, int operation, int value) {
-    return syscall(SYS_futex, futex, operation, value, NULL, NULL, NULL);
-   }
-
-#define futex_wait(futex, value) \
-    (syscall_futex(futex, FUTEX_WAIT_PRIVATE, value))
-
-#define futex_wake(futex, value) \
-    (syscall_futex(futex, FUTEX_WAKE_PRIVATE, value))
-
-
-typedef struct {
-    int futex;
-    const char *description;
-#ifdef FUTEX_WANT_STATS
-    uint64_t no_contention_count;
-    uint64_t contention_count;
-    uint64_t contention_total_delay;
-    uint64_t contention_max_delta;
-    #define FUTEX_STATS_STATIC_INIT , 0, 0, 0, 0
-#else
-    #define FUTEX_STATS_STATIC_INIT
-#endif
-} futex_t;
-
-#define FUTEX_STATIC_INIT(description) { 0, description FUTEX_STATS_STATIC_INIT }
-
-Py_LOCAL_INLINE(void) futex_init(futex_t *f) {
-    f->futex = 0;
-}
-
-Py_LOCAL_INLINE(void) futex_lock(futex_t *f) {
-#ifdef FUTEX_WANT_STATS
-    unsigned int _;
-    uint64_t start = __rdtscp(&_);
-    uint64_t delta;
-#endif /* FUTEX_WANT_STATS */
-    int current = __sync_val_compare_and_swap(&(f->futex), 0, 1);
-    if (current == 0)
-        goto stats;
-    if (current != 2)
-        current = __sync_lock_test_and_set(&(f->futex), 2);
-    while (current != 0) {
-        futex_wait(&(f->futex), 2);
-        current = __sync_lock_test_and_set(&(f->futex), 2);
-    }
-stats:
-#ifdef FUTEX_WANT_STATS
-    delta = __rdtscp(&_) - start;
-    if (delta <= 250)
-        f->no_contention_count++;
-    else {
-        f->contention_count++;
-        f->contention_total_delay += delta;
-        f->contention_max_delta = PyMAX(f->contention_max_delta, delta);
-    }
-#endif /* FUTEX_WANT_STATS */
-    return;
-}
-
-Py_LOCAL_INLINE(void) futex_unlock(futex_t *f) {
-    if (__sync_fetch_and_sub(&(f->futex), 1) != 1) {
-        f->futex = 0;
-        futex_wake(&(f->futex), 1);
-    }
-}
-
-
-Py_LOCAL_INLINE(void) futex_reset_stats(futex_t *f) {
-#ifdef FUTEX_WANT_STATS
-    f->no_contention_count =
-        f->contention_total_delay =
-        f->contention_max_delta =
-        f->contention_count = 0;
-#endif /* FUTEX_WANT_STATS */
-}
-
-Py_LOCAL_INLINE(void) futex_stats(futex_t *f) {
-#ifdef FUTEX_WANT_STATS
-    printf("[%s] %ld total locks\n", f->description, f->no_contention_count + f->contention_count);
-    printf("[%s] %ld locks without contention\n", f->description, f->no_contention_count);
-    printf("[%s] %ld locks with contention\n", f->description, f->contention_count);
-    if (f->contention_count) {
-        printf("[%s] %ld contention total delay in cycles\n", f->description, f->contention_total_delay);
-        printf("[%s] %f contention total delay in cpu-seconds\n", f->description, f->contention_total_delay / F_CYCLES_PER_SEC);
-        printf("[%s] %f contention average delay in cycles\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
-        printf("[%s] %ld contention max delay in cycles\n", f->description, f->contention_max_delta);
-    }
-    futex_reset_stats(f);
-/*
-#else
-    printf("[futex stats disabled at compile-time]\n");
-*/
-#endif /* FUTEX_WANT_STATS */
-}
-
-
-/*
-** furtex
-**
-** recursive futex lock
-**
-*/
-
-typedef struct {
-    futex_t futex;
-    const char *description;
-    int count;
-    pthread_t tid;
-#ifdef FURTEX_WANT_STATS
-    uint64_t no_contention_count;
-    uint64_t contention_count;
-    uint64_t contention_total_delay;
-    uint64_t contention_max_delta;
-    #define FURTEX_STATS_STATIC_INIT , 0, 0, 0, 0
-#else
-    #define FURTEX_STATS_STATIC_INIT
-#endif /* FURTEX_WANT_STATS */
-} furtex_t;
-
-#define FURTEX_STATIC_INIT(description) { FUTEX_STATIC_INIT(description), description, 0, 0 FURTEX_STATS_STATIC_INIT }
-
-Py_LOCAL_INLINE(void) furtex_init(furtex_t *f) {
-    memset(f, 0, sizeof(*f));
-}
-
-Py_LOCAL_INLINE(void) furtex_lock(furtex_t *f) {
-    pthread_t tid = pthread_self();
-#ifdef FURTEX_WANT_STATS
-    uint64_t start, delta;
-    unsigned int _;
-#endif /* FURTEX_WANT_STATS */
-    if (f->count && pthread_equal(f->tid, tid)) {
-        f->count++;
-        assert(f->count > 1);
-        return;
-    }
-#ifdef FURTEX_WANT_STATS
-    start = __rdtscp(&_);
-#endif /* FURTEX_WANT_STATS */
-    futex_lock(&(f->futex));
-#ifdef FURTEX_WANT_STATS
-    delta = __rdtscp(&_) - start;
-    if (delta <= 250)
-        f->no_contention_count++;
-    else {
-        f->contention_count++;
-        f->contention_total_delay += delta;
-        f->contention_max_delta = PyMAX(f->contention_max_delta, delta);
-    }
-#endif /* FURTEX_WANT_STATS */
-    f->tid = tid;
-    assert(f->count == 0);
-    f->count = 1;
-}
-
-Py_LOCAL_INLINE(void) furtex_unlock(furtex_t *f) {
-    /* this function assumes we own the lock! */
-    assert(f->count > 0);
-    if (--f->count)
-        return;
-    futex_unlock(&(f->futex));
-}
-
-Py_LOCAL_INLINE(void) furtex_reset_stats(furtex_t *f) {
-#ifdef FURTEX_WANT_STATS
-    f->no_contention_count =
-        f->contention_total_delay =
-        f->contention_max_delta =
-        f->contention_count = 0;
-#endif /* FURTEX_WANT_STATS */
-}
-
-Py_LOCAL_INLINE(void) furtex_stats(furtex_t *f) {
-#ifdef FURTEX_WANT_STATS
-    printf("[%s] %ld total locks\n", f->description, f->no_contention_count + f->contention_count);
-    printf("[%s] %ld locks without contention\n", f->description, f->no_contention_count);
-    printf("[%s] %ld locks with contention\n", f->description, f->contention_count);
-    if (f->contention_count) {
-        printf("[%s] %ld contention total delay in cycles\n", f->description, f->contention_total_delay);
-        printf("[%s] %f contention total delay in cpu-seconds\n", f->description, f->contention_total_delay / 2600000000.0);
-        printf("[%s] %f contention average delay in cycles\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
-        printf("[%s] %ld contention max delay in cycles\n", f->description, f->contention_max_delta);
-    }
-    furtex_reset_stats(f);
-/*
-#else
-    printf("[furtex stats disabled at compile-time]\n");
-*/
-#endif /* FURTEX_WANT_STATS */
-}
-
+#include "lock.h"
 
 #define PyObject_HEAD_INIT(type)        \
     { _PyObject_EXTRA_INIT              \
@@ -1022,10 +822,10 @@ Py_LOCAL_INLINE(int) __py_incref__(PyObject *o) {
     unsigned int _;
     _Py_INC_REFTOTAL;
     start = __rdtscp(&_);
-    __sync_fetch_and_add(&o->ob_refcnt, 1);
+    ATOMIC_INC(&o->ob_refcnt);
     delta = __rdtscp(&_) - start;
-    __sync_fetch_and_add(&total_refcount_time, delta);
-    __sync_fetch_and_add(&total_refcounts, 1);
+	ATOMIC_ADD(&total_refcount_time, delta);
+	ATOMIC_INC(&total_refcounts);
     return 1;
 }
 
@@ -1034,10 +834,10 @@ Py_LOCAL_INLINE(void) __py_decref__(PyObject *o) {
     unsigned int _;
     _Py_DEC_REFTOTAL;
     start = __rdtscp(&_);
-    new_rc = __sync_sub_and_fetch(&(o->ob_refcnt), 1);
+    new_rc = ATOMIC_DEC(&(o->ob_refcnt));
     delta = __rdtscp(&_) - start;
-    __sync_fetch_and_add(&total_refcount_time, delta);
-    __sync_fetch_and_add(&total_refcounts, 1);
+	ATOMIC_ADD(&total_refcount_time, delta);
+	ATOMIC_INC(&total_refcounts, 1);
     if (new_rc != 0)
         _Py_CHECK_REFCNT(o)
     else
@@ -1054,13 +854,13 @@ Py_LOCAL_INLINE(void) __py_decref__(PyObject *o) {
 
 #define Py_INCREF(op) (                         \
     _Py_INC_REFTOTAL  _Py_REF_DEBUG_COMMA       \
-    __sync_fetch_and_add(&(((PyObject *)(op))->ob_refcnt), 1) )
+    ATOMIC_INC(&(((PyObject *)(op))->ob_refcnt)) )
 
 #define Py_DECREF(op)                                   \
     do {                                                \
         PyObject *_py_decref_tmp = (PyObject *)(op);    \
         if (_Py_DEC_REFTOTAL  _Py_REF_DEBUG_COMMA       \
-        __sync_sub_and_fetch(&(_py_decref_tmp->ob_refcnt), 1) != 0) \
+        ATOMIC_DEC(&(_py_decref_tmp->ob_refcnt)) != 0)  \
             _Py_CHECK_REFCNT(_py_decref_tmp)            \
         else                                            \
             _Py_Dealloc(_py_decref_tmp);                \
