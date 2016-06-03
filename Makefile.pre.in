@@ -384,6 +384,7 @@ PYTHON_OBJS=	\
 		Python/graminit.o \
 		Python/import.o \
 		Python/importdl.o \
+		Python/lock_linux.o \
 		Python/marshal.o \
 		Python/modsupport.o \
 		Python/mystrtoul.o \

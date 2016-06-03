@@ -19,7 +19,7 @@ Py_LOCAL_INLINE(void) list_lock_dealloc(PyListObject *self)
 {
 }
 
-Py_LOCAL_INLINE(void) list_lock(PyListObject *self)
+void list_lock(PyListObject *self)
 {
     // printf("%5d: locking %p\n", getpid(), d);
     furtex_lock(&(self->lock));
@@ -27,7 +27,7 @@ Py_LOCAL_INLINE(void) list_lock(PyListObject *self)
     // printf("%5d:  locked %p\n", getpid(), d);
 }
 
-Py_LOCAL_INLINE(void) list_unlock(PyListObject *self)
+void list_unlock(PyListObject *self)
 {
     // printf("%5d:  unlock %p\n", getpid(), d);
     furtex_unlock(&(self->lock));

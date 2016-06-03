@@ -16,8 +16,8 @@ PyAPI_FUNC(void *) PyMem_RawMalloc(size_t size);
 PyAPI_FUNC(void *) PyMem_RawCalloc(size_t nelem, size_t elsize);
 PyAPI_FUNC(void *) PyMem_RawRealloc(void *ptr, size_t new_size);
 PyAPI_FUNC(void) PyMem_RawFree(void *ptr);
-#endif
 
+#endif
 
 /* BEWARE:
 
@@ -180,6 +180,11 @@ PyAPI_FUNC(void) PyMem_SetAllocator(PyMemAllocatorDomain domain,
    The function does nothing if Python is not compiled is debug mode. */
 PyAPI_FUNC(void) PyMem_SetupDebugHooks(void);
 #endif
+
+PyAPI_FUNC(Py_ssize_t) Py_AtomicInc(Py_ssize_t* value);
+PyAPI_FUNC(Py_ssize_t) Py_AtomicDec(Py_ssize_t* value);
+PyAPI_FUNC(Py_ssize_t) Py_AtomicAdd(Py_ssize_t* to, Py_ssize_t value);
+
 
 #ifdef __cplusplus
 }
