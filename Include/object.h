@@ -133,12 +133,13 @@ whose size is determined when the object is allocated.
 #import <mach/mach_time.h>
 #endif
 
-Py_LOCAL_INLINE(uint64_t) fast_get_cycles(unsigned int* t)
+Py_LOCAL_INLINE(uint64_t) fast_get_cycles(void)
 {
 #ifdef __APPLE__
     return mach_absolute_time();    
 #else
-    return __rdtscp(t);
+    unsigned int t;
+    return __rdtscp(&t);
 #endif
 }
 
@@ -199,8 +200,7 @@ Py_LOCAL_INLINE(void) futex_init(futex_t *f) {
 
 Py_LOCAL_INLINE(void) futex_lock(futex_t *f) {
 #ifdef FUTEX_WANT_STATS
-    unsigned int _;
-    uint64_t start = fast_get_cycles(&_);
+    uint64_t start = fast_get_cycles();
     uint64_t delta;
 #endif /* FUTEX_WANT_STATS */
 
@@ -232,7 +232,7 @@ Py_LOCAL_INLINE(void) futex_lock(futex_t *f) {
 
 stats:
 #ifdef FUTEX_WANT_STATS
-    delta = fast_get_cycles(&_) - start;
+    delta = fast_get_cycles() - start;
     if (delta <= 250)
         f->no_contention_count++;
     else {
@@ -334,11 +334,11 @@ Py_LOCAL_INLINE(void) furtex_lock(furtex_t *f) {
         return;
     }
 #ifdef FURTEX_WANT_STATS
-    start = fast_get_cycles(&_);
+    start = fast_get_cycles();
 #endif /* FURTEX_WANT_STATS */
     futex_lock(&(f->futex));
 #ifdef FURTEX_WANT_STATS
-    delta = fast_get_cycles(&_) - start;
+    delta = fast_get_cycles() - start;
     if (delta <= 250)
         f->no_contention_count++;
     else {
@@ -1092,11 +1092,10 @@ extern uint64_t total_refcounts;
 
 Py_LOCAL_INLINE(int) __py_incref__(PyObject *o) {
     uint64_t start, delta;
-    unsigned int _;
     _Py_INC_REFTOTAL;
-    start = fast_get_cycles(&_);
+    start = fast_get_cycles();
     __sync_fetch_and_add(&o->ob_refcnt, 1);
-    delta = fast_get_cycles(&_) - start;
+    delta = fast_get_cycles() - start;
     __sync_fetch_and_add(&total_refcount_time, delta);
     __sync_fetch_and_add(&total_refcounts, 1);
     return 1;
@@ -1104,11 +1103,10 @@ Py_LOCAL_INLINE(int) __py_incref__(PyObject *o) {
 
 Py_LOCAL_INLINE(void) __py_decref__(PyObject *o) {
     uint64_t start, delta, new_rc;
-    unsigned int _;
     _Py_DEC_REFTOTAL;
-    start = fast_get_cycles(&_);
+    start = fast_get_cycles();
     new_rc = __sync_sub_and_fetch(&(o->ob_refcnt), 1);
-    delta = fast_get_cycles(&_) - start;
+    delta = fast_get_cycles() - start;
     __sync_fetch_and_add(&total_refcount_time, delta);
     __sync_fetch_and_add(&total_refcounts, 1);
     if (new_rc != 0)
