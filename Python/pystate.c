@@ -64,10 +64,11 @@ static int autoTLSkey = 0;
 
 static PyInterpreterState *interp_head = NULL;
 
-/* Assuming the current thread holds the GIL, this is the
-   PyThreadState for the current thread. */
-_Py_atomic_address _PyThreadState_Current = {0};
 PyThreadFrameGetter _PyThreadState_GetFrame = NULL;
+
+/* Now that there isn't a GIL, there is no such thing as
+   a global pointer to the frame of whoever has the GIL. */
+const _Py_atomic_address const _PyThreadState_Current = {0};
 
 #ifdef WITH_THREAD
 static void _PyGILState_NoteThreadState(PyThreadState* tstate);
@@ -211,6 +212,8 @@ new_threadstate(PyInterpreterState *interp, int init)
 #endif
 
         tstate->dict = NULL;
+
+        py_time_refcounts_setzero(&(tstate->py_time_refcounts));
 
         tstate->curexc_type = NULL;
         tstate->curexc_value = NULL;
@@ -455,6 +458,16 @@ PyThreadState_Clear(PyThreadState *tstate)
     Py_CLEAR(tstate->coroutine_wrapper);
 }
 
+py_time_refcounts_t py_time_refcounts;
+
+py_time_refcounts_t* PyState_GetThisThreadPyTimeRefcounts() {
+    PyThreadState *tstate = PyGILState_GetThisThreadState();
+    if (tstate) {
+      return &(tstate->py_time_refcounts);
+    } else {
+      return NULL;
+    }
+}
 
 /* Common code for PyThreadState_Delete() and PyThreadState_DeleteCurrent() */
 static void
@@ -467,6 +480,7 @@ tstate_delete_common(PyThreadState *tstate)
     if (interp == NULL)
         Py_FatalError("PyThreadState_Delete: NULL interp");
     PyThreadState_FrameFreeListClear(tstate);
+    py_time_refcounts_persist(&(tstate->py_time_refcounts));
     HEAD_LOCK();
     if (tstate->prev)
         tstate->prev->next = tstate->next;
