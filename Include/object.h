@@ -98,10 +98,10 @@ whose size is determined when the object is allocated.
     #define FUTEX_WANT_STATS
     #define FURTEX_WANT_STATS
     #define GC_TRACK_STATS
-
-    #define CYCLES_PER_SEC 2600000000
-    #define F_CYCLES_PER_SEC ((double)CYCLES_PER_SEC)
 #endif /* ACTIVATE STATS */
+
+#define CYCLES_PER_SEC 2600000000
+#define F_CYCLES_PER_SEC ((double)CYCLES_PER_SEC)
 
 #if defined(FUTEX_WANT_STATS) || defined(FURTEX_WANT_STATS)
 #define PyMAX(a, b) ((a)>(b)?(a):(b))
@@ -277,6 +277,21 @@ Py_LOCAL_INLINE(void) futex_reset_stats(futex_t *f) {
 
 void futex_stats(futex_t *f);
 
+Py_LOCAL_INLINE(float) seconds_from_cycles(uint64_t cycles) {
+#ifdef __APPLE__
+    static double to_nano = -1;
+    mach_timebase_info_data_t sTimebaseInfo;
+
+    if (to_nano < 0) {
+        mach_timebase_info(&sTimebaseInfo);
+        to_nano = (float) sTimebaseInfo.numer / (float) sTimebaseInfo.denom;
+    }
+    return cycles * to_nano / 1000000000;
+#else
+    return cycles / F_CYCLES_PER_SEC;
+#endif
+}
+
 typedef struct {
     uint64_t total_refcount_time;
     uint64_t total_refcounts;
@@ -331,7 +346,6 @@ Py_LOCAL_INLINE(void) _furtex_lock(furtex_t *f, const char *file, int line) {
     pthread_t tid = pthread_self();
 #ifdef FURTEX_WANT_STATS
     uint64_t start, delta;
-    unsigned int _;
 #endif /* FURTEX_WANT_STATS */
     if (f->count && pthread_equal(f->tid, tid)) {
         f->count++;
