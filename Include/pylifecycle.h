@@ -86,6 +86,7 @@ PyAPI_FUNC(int) _PyFloat_Init(void);
 PyAPI_FUNC(int) PyByteArray_Init(void);
 PyAPI_FUNC(void) _PyRandom_Init(void);
 #endif
+PyAPI_FUNC(int) _PySet_Init(void);
 
 /* Various internal finalizers */
 #ifndef Py_LIMITED_API

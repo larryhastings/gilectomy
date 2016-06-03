@@ -32,7 +32,6 @@ static PyObject _dummy_struct;
 
 #define dummy (&_dummy_struct)
 
-
 /* ======================================================================== */
 /* ======= Begin logic for probing the hash table ========================= */
 
@@ -800,6 +799,28 @@ frozenset_hash(PyObject *self)
     return hash;
 }
 
+
+/***** set_lock functions *************************************************/
+
+Py_LOCAL_INLINE(void) set_lock_new(PySetObject *d)
+{
+    furtex_init(&d->lock);
+}
+
+Py_LOCAL_INLINE(void) set_lock_dealloc(PySetObject *d)
+{
+}
+
+Py_LOCAL_INLINE(void) set_lock(PySetObject *d)
+{
+    furtex_lock(&(d->lock));
+}
+
+Py_LOCAL_INLINE(void) set_unlock(PySetObject *d)
+{
+    furtex_unlock(&(d->lock));
+}
+
 /***** Set iterator type ***********************************************/
 
 typedef struct {
@@ -1057,6 +1078,7 @@ make_new_set(PyTypeObject *type, PyObject *iterable)
     so->hash = -1;
     so->finger = 0;
     so->weakreflist = NULL;
+    set_lock_new(so);
 
     if (iterable != NULL) {
         if (set_update_internal(so, iterable)) {
@@ -1108,7 +1130,8 @@ frozenset_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
             return result;
         Py_DECREF(result);
     }
-    /* The empty frozenset is a singleton */
+    /* The empty frozenset is a singleton
+       we initialize it in _PySet_Init, so after that it should always be != NULL */
     if (emptyfrozenset == NULL)
         emptyfrozenset = make_new_set(type, NULL);
     Py_XINCREF(emptyfrozenset);
@@ -1119,6 +1142,12 @@ int
 PySet_ClearFreeList(void)
 {
     return 0;
+}
+
+int
+_PySet_Init(void)
+{
+    return make_new_set(&PyFrozenSet_Type, NULL) ? 1 : 0;
 }
 
 void
@@ -2273,7 +2302,6 @@ PyTypeObject PyFrozenSet_Type = {
     PyObject_GC_Del,                    /* tp_free */
 };
 
-
 /***** C API functions *************************************************/
 
 PyObject *
@@ -2291,88 +2319,120 @@ PyFrozenSet_New(PyObject *iterable)
 Py_ssize_t
 PySet_Size(PyObject *anyset)
 {
+    Py_ssize_t res;
     if (!PyAnySet_Check(anyset)) {
         PyErr_BadInternalCall();
         return -1;
     }
-    return PySet_GET_SIZE(anyset);
+    set_lock((PySetObject *)anyset);
+    res = PySet_GET_SIZE(anyset);
+    set_unlock((PySetObject *)anyset);
+    return res;
 }
 
 int
 PySet_Clear(PyObject *set)
 {
+    int res;
     if (!PySet_Check(set)) {
         PyErr_BadInternalCall();
         return -1;
     }
-    return set_clear_internal((PySetObject *)set);
+    set_lock((PySetObject *)set);
+    res = set_clear_internal((PySetObject *)set);
+    set_unlock((PySetObject *)set);
+    return res;
 }
 
 int
 PySet_Contains(PyObject *anyset, PyObject *key)
 {
+    int res;
     if (!PyAnySet_Check(anyset)) {
         PyErr_BadInternalCall();
         return -1;
     }
-    return set_contains_key((PySetObject *)anyset, key);
+    set_lock((PySetObject *)anyset);
+    res = set_contains_key((PySetObject *)anyset, key);
+    set_unlock((PySetObject *)anyset);
+    return res;
 }
 
 int
 PySet_Discard(PyObject *set, PyObject *key)
 {
+    int res;
     if (!PySet_Check(set)) {
         PyErr_BadInternalCall();
         return -1;
     }
-    return set_discard_key((PySetObject *)set, key);
+    set_lock((PySetObject *)set);
+    res = set_discard_key((PySetObject *)set, key);
+    set_unlock((PySetObject *)set);
+    return res;
 }
 
 int
 PySet_Add(PyObject *anyset, PyObject *key)
 {
+    int res;
     if (!PySet_Check(anyset) &&
         (!PyFrozenSet_Check(anyset) || Py_REFCNT(anyset) != 1)) {
         PyErr_BadInternalCall();
         return -1;
     }
-    return set_add_key((PySetObject *)anyset, key);
+    set_lock((PySetObject *)anyset);
+    res = set_add_key((PySetObject *)anyset, key);
+    set_unlock((PySetObject *)anyset);
+    return res;
 }
 
 int
 _PySet_NextEntry(PyObject *set, Py_ssize_t *pos, PyObject **key, Py_hash_t *hash)
 {
     setentry *entry;
+    int res = 0;
 
     if (!PyAnySet_Check(set)) {
         PyErr_BadInternalCall();
         return -1;
     }
-    if (set_next((PySetObject *)set, pos, &entry) == 0)
-        return 0;
-    *key = entry->key;
-    *hash = entry->hash;
-    return 1;
+    set_lock((PySetObject *)set);
+    if (set_next((PySetObject *)set, pos, &entry) != 0) {
+        *key = entry->key;
+        *hash = entry->hash;
+        res = 1;
+    }
+    set_unlock((PySetObject *)set);
+    return res;
 }
 
 PyObject *
 PySet_Pop(PyObject *set)
 {
+    PyObject * res;
     if (!PySet_Check(set)) {
         PyErr_BadInternalCall();
         return NULL;
     }
-    return set_pop((PySetObject *)set);
+    set_lock((PySetObject *)set);
+    res = set_pop((PySetObject *)set);
+    set_unlock((PySetObject *)set);
+    return res;
 }
 
 int
 _PySet_Update(PyObject *set, PyObject *iterable)
 {
+    int res;
     if (!PySet_Check(set)) {
         PyErr_BadInternalCall();
         return -1;
     }
-    return set_update_internal((PySetObject *)set, iterable);
+    set_lock((PySetObject *)set);
+    res = set_update_internal((PySetObject *)set, iterable);
+    set_unlock((PySetObject *)set);
+    return res;
 }
 
 /* Exported for the gdb plugin's benefit. */
