@@ -318,7 +318,7 @@ Py_LOCAL_INLINE(void) furtex_stats(furtex_t *f) {
 
 #define PyObject_HEAD_INIT(type)        \
     { _PyObject_EXTRA_INIT              \
-    NULL, type },
+    0, type },
 
 #define PyVarObject_HEAD_INIT(type, size)       \
     { PyObject_HEAD_INIT(type) size },
@@ -339,7 +339,7 @@ Py_LOCAL_INLINE(void) furtex_stats(furtex_t *f) {
  */
 typedef struct _object {
     _PyObject_HEAD_EXTRA
-    Py_ssize_t *ob_refcnt_ptr;
+    Py_ssize_t ob_refcnt_ptr;
     struct _typeobject *ob_type;
 } PyObject;
 
@@ -348,7 +348,9 @@ typedef struct {
     Py_ssize_t ob_size; /* Number of items in variable part */
 } PyVarObject;
 
-#define Py_REFCNT(ob)           (*((PyObject*)(ob))->ob_refcnt_ptr)
+#define Py_REFCNT(ob)           ((const Py_ssize_t)(((PyObject*)(ob))->ob_refcnt_ptr))
+#define _Py_REFCNT(ob)          (((PyObject*)(ob))->ob_refcnt_ptr)
+#define Py_SET_REFCNT(ob, val)  (_Py_REFCNT(ob) = (val))
 #define Py_TYPE(ob)             (((PyObject*)(ob))->ob_type)
 #define Py_SIZE(ob)             (((PyVarObject*)(ob))->ob_size)
 
@@ -999,7 +1001,7 @@ PyAPI_FUNC(void) _Py_AddToAllObjects(PyObject *, int force);
 #define _Py_NewReference(op) (                          \
     _Py_INC_TPALLOCS(op) _Py_COUNT_ALLOCS_COMMA         \
     _Py_INC_REFTOTAL  _Py_REF_DEBUG_COMMA               \
-    Py_REFCNT(op) = 1)
+    Py_SET_REFCNT(op, 1))
 
 #define _Py_ForgetReference(op) _Py_INC_TPFREES(op)
 
@@ -1022,7 +1024,7 @@ Py_LOCAL_INLINE(int) __py_incref__(PyObject *o) {
     unsigned int _;
     _Py_INC_REFTOTAL;
     start = __rdtscp(&_);
-    __sync_fetch_and_add(&Py_REFCNT(o), 1);
+    __sync_fetch_and_add(&_Py_REFCNT(o), 1);
     delta = __rdtscp(&_) - start;
     __sync_fetch_and_add(&total_refcount_time, delta);
     __sync_fetch_and_add(&total_refcounts, 1);
@@ -1034,7 +1036,7 @@ Py_LOCAL_INLINE(void) __py_decref__(PyObject *o) {
     unsigned int _;
     _Py_DEC_REFTOTAL;
     start = __rdtscp(&_);
-    new_rc = __sync_sub_and_fetch(&Py_REFCNT(o), 1);
+    new_rc = __sync_sub_and_fetch(&_Py_REFCNT(o), 1);
     delta = __rdtscp(&_) - start;
     __sync_fetch_and_add(&total_refcount_time, delta);
     __sync_fetch_and_add(&total_refcounts, 1);
@@ -1054,13 +1056,13 @@ Py_LOCAL_INLINE(void) __py_decref__(PyObject *o) {
 
 #define Py_INCREF(op) (                         \
     _Py_INC_REFTOTAL  _Py_REF_DEBUG_COMMA       \
-    __sync_fetch_and_add(&Py_REFCNT((PyObject *)(op)), 1) )
+    __sync_fetch_and_add(&_Py_REFCNT(op), 1) )
 
 #define Py_DECREF(op)                                   \
     do {                                                \
         PyObject *_py_decref_tmp = (PyObject *)(op);    \
         if (_Py_DEC_REFTOTAL  _Py_REF_DEBUG_COMMA       \
-        __sync_sub_and_fetch(&Py_REFCNT(_py_decref_tmp), 1) != 0) \
+            __sync_sub_and_fetch(&_Py_REFCNT(_py_decref_tmp), 1) != 0) \
             _Py_CHECK_REFCNT(_py_decref_tmp)            \
         else                                            \
             _Py_Dealloc(_py_decref_tmp);                \

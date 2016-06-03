@@ -306,7 +306,7 @@ PyObject_CallFinalizerFromDealloc(PyObject *self)
         Py_FatalError("PyObject_CallFinalizerFromDealloc called on "
                       "object with a non-zero refcount");
     }
-    Py_REFCNT(self) = 1;
+    Py_SET_REFCNT(self, 1);
 
     PyObject_CallFinalizer(self);
 
@@ -314,7 +314,7 @@ PyObject_CallFinalizerFromDealloc(PyObject *self)
      * cause a recursive call.
      */
     assert(Py_REFCNT(self) > 0);
-    if (--Py_REFCNT(self) == 0)
+    if (--_Py_REFCNT(self) == 0)
         return 0;         /* this is the normal path out */
 
     /* tp_finalize resurrected it!  Make it look like the original Py_DECREF
@@ -322,7 +322,7 @@ PyObject_CallFinalizerFromDealloc(PyObject *self)
      */
     refcnt = Py_REFCNT(self);
     _Py_NewReference(self);
-    Py_REFCNT(self) = refcnt;
+    Py_SET_REFCNT(self, refcnt);
 
     if (PyType_IS_GC(Py_TYPE(self))) {
         assert(_PyGC_REFS(self) != _PyGC_REFS_UNTRACKED);
@@ -1634,10 +1634,22 @@ _Py_ReadyTypes(void)
         Py_FatalError("Can't initialize bytearray type");
 
     if (PyType_Ready(&PyBytes_Type) < 0)
-        Py_FatalError("Can't initialize 'str'");
+        Py_FatalError("Can't initialize bytes type");
+
+    if (PyType_Ready(&PyBytesIter_Type) < 0)
+        Py_FatalError("Can't initialize bytes iterator type");
+
+    if (PyType_Ready(&PyByteArrayIter_Type) < 0)
+        Py_FatalError("Can't initialize bytearray iterator type");
 
     if (PyType_Ready(&PyList_Type) < 0)
         Py_FatalError("Can't initialize list type");
+
+    if (PyType_Ready(&PyListIter_Type) < 0)
+        Py_FatalError("Can't initialize list iter type");
+
+    if (PyType_Ready(&PyListRevIter_Type) < 0)
+        Py_FatalError("Can't initialize list reverse iter type");
 
     if (PyType_Ready(&_PyNone_Type) < 0)
         Py_FatalError("Can't initialize None type");
@@ -1654,11 +1666,26 @@ _Py_ReadyTypes(void)
     if (PyType_Ready(&PyRange_Type) < 0)
         Py_FatalError("Can't initialize range type");
 
+    if (PyType_Ready(&PyRangeIter_Type) < 0)
+        Py_FatalError("Can't initialize range iterator type");
+
     if (PyType_Ready(&PyDict_Type) < 0)
         Py_FatalError("Can't initialize dict type");
 
+    if (PyType_Ready(&PyDictIterKey_Type) < 0)
+        Py_FatalError("Can't initialize dict iter key type");
+
+    if (PyType_Ready(&PyDictIterValue_Type) < 0)
+        Py_FatalError("Can't initialize dict iter values type");
+
+    if (PyType_Ready(&PyDictIterItem_Type) < 0)
+        Py_FatalError("Can't initialize dict iter values type");
+
     if (PyType_Ready(&PyODict_Type) < 0)
         Py_FatalError("Can't initialize OrderedDict type");
+
+    if (PyType_Ready(&PyDictIterKey_Type) < 0)
+        Py_FatalError("Can't initialize dict iter key type");
 
     if (PyType_Ready(&PyODictKeys_Type) < 0)
         Py_FatalError("Can't initialize odict_keys type");
@@ -1675,14 +1702,23 @@ _Py_ReadyTypes(void)
     if (PyType_Ready(&PySet_Type) < 0)
         Py_FatalError("Can't initialize set type");
 
+    if (PyType_Ready(&PySetIter_Type) < 0)
+        Py_FatalError("Can't initialize set iterator type");
+
     if (PyType_Ready(&PyUnicode_Type) < 0)
         Py_FatalError("Can't initialize str type");
+
+    if (PyType_Ready(&PyUnicodeIter_Type) < 0)
+        Py_FatalError("Can't initialize str iter type");
 
     if (PyType_Ready(&PySlice_Type) < 0)
         Py_FatalError("Can't initialize slice type");
 
     if (PyType_Ready(&PyStaticMethod_Type) < 0)
         Py_FatalError("Can't initialize static method type");
+
+    if (PyType_Ready(&PyClassMethod_Type) < 0)
+        Py_FatalError("Can't initialize classmethod type");
 
     if (PyType_Ready(&PyComplex_Type) < 0)
         Py_FatalError("Can't initialize complex type");
@@ -1704,6 +1740,9 @@ _Py_ReadyTypes(void)
 
     if (PyType_Ready(&PyTuple_Type) < 0)
         Py_FatalError("Can't initialize tuple type");
+
+    if (PyType_Ready(&PyTupleIter_Type) < 0)
+        Py_FatalError("Can't initialize tuple iter type");
 
     if (PyType_Ready(&PyEnum_Type) < 0)
         Py_FatalError("Can't initialize enumerate type");
@@ -1782,6 +1821,9 @@ _Py_ReadyTypes(void)
 
     if (PyType_Ready(&_PyCoroWrapper_Type) < 0)
         Py_FatalError("Can't initialize coroutine wrapper type");
+
+    _Py_NewReference(Py_False);
+    _Py_NewReference(Py_True);
 }
 
 
@@ -1791,7 +1833,7 @@ void
 _Py_NewReference(PyObject *op)
 {
     _Py_INC_REFTOTAL;
-    Py_REFCNT(op) = 1;
+    Py_SET_REFCNT(op, 1);
     _Py_AddToAllObjects(op, 1);
     _Py_INC_TPALLOCS(op);
 }

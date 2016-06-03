@@ -5361,7 +5361,7 @@ _PyLong_Init(void)
             /* _Py_NewReference sets the ref count to 1 but
              * the ref count might be larger. Set the refcnt
              * to the original refcnt + 1 */
-            Py_REFCNT(op) = refcnt + 1;
+            Py_SET_REFCNT(op, refcnt + 1);
             assert(Py_SIZE(op) == size);
             assert(v->ob_digit[0] == (digit)abs(ival));
         }

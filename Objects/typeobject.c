@@ -4813,6 +4813,7 @@ PyType_Ready(PyTypeObject *type)
     assert((type->tp_flags & Py_TPFLAGS_READYING) == 0);
 
     type->tp_flags |= Py_TPFLAGS_READYING;
+    _Py_NewReference(type);
 
 #ifdef Py_TRACE_REFS
     /* PyType_Ready is the closest thing we have to a choke point
