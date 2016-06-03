@@ -341,9 +341,11 @@ Py_LOCAL_INLINE(void) py_time_refcounts_stats(void) {
 
 typedef struct {
     futex_t futex;
-    const char *description;
     int count;
     pthread_t tid;
+    const char *description;
+    const char *file;
+    int line;
 #ifdef FURTEX_WANT_STATS
     uint64_t no_contention_count;
     uint64_t contention_count;
@@ -355,14 +357,17 @@ typedef struct {
 #endif /* FURTEX_WANT_STATS */
 } furtex_t;
 
-#define FURTEX_STATIC_INIT(description) { FUTEX_STATIC_INIT(description), description, 0, 0 FURTEX_STATS_STATIC_INIT }
+#define FURTEX_STATIC_INIT(description) { FUTEX_STATIC_INIT(description), 0, 0, description, NULL, 0 FURTEX_STATS_STATIC_INIT }
 
 Py_LOCAL_INLINE(void) furtex_init(furtex_t *f) {
     memset(f, 0, sizeof(*f));
     futex_init(&f->futex);
 }
 
-Py_LOCAL_INLINE(void) furtex_lock(furtex_t *f) {
+#define furtex_lock(f) (_furtex_lock(f, __FILE__, __LINE__))
+
+
+Py_LOCAL_INLINE(void) _furtex_lock(furtex_t *f, const char *file, int line) {
     pthread_t tid = pthread_self();
 #ifdef FURTEX_WANT_STATS
     uint64_t start, delta;
@@ -387,6 +392,8 @@ Py_LOCAL_INLINE(void) furtex_lock(furtex_t *f) {
         f->contention_max_delta = PyMAX(f->contention_max_delta, delta);
     }
 #endif /* FURTEX_WANT_STATS */
+    f->file = file;
+    f->line = line;
     f->tid = tid;
     assert(f->count == 0);
     f->count = 1;
@@ -397,6 +404,8 @@ Py_LOCAL_INLINE(void) furtex_unlock(furtex_t *f) {
     assert(f->count > 0);
     if (--f->count)
         return;
+    f->file = NULL;
+    f->line = 0;
     futex_unlock(&(f->futex));
 }
 
