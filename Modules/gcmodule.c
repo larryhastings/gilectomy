@@ -1587,18 +1587,18 @@ static struct PyModuleDef gcmodule = {
 
 static furtex_t gc_furtex = FURTEX_STATIC_INIT("gc lock");
 
-void gc_lock(void)
+void _gc_lock(const char *file, int line)
 {
-    furtex_lock(&gc_furtex);
+    _furtex_lock(&gc_furtex, file, line);
 }
 
-void gc_lock2(furtex_t *f2)
+void _gc_lock2(furtex_t *f2, const char *file, int line)
 {
     if (f2 && (f2 <= &gc_furtex))
-        furtex_lock(f2);
-    furtex_lock(&gc_furtex);
+        _furtex_lock(f2, file, line);
+    _furtex_lock(&gc_furtex, file, line);
     if (f2 > &gc_furtex)
-        furtex_lock(f2);
+        _furtex_lock(f2, file, line);
 }
 
 void gc_unlock(void)

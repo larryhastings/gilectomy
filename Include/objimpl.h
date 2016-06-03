@@ -253,8 +253,10 @@ typedef union _gc_head {
     double dummy;  /* force worst-case alignment */
 } PyGC_Head;
 
-PyAPI_FUNC(void) gc_lock(void);
-PyAPI_FUNC(void) gc_lock2(furtex_t *);
+#define gc_lock() (_gc_lock(__FILE__, __LINE__))
+PyAPI_FUNC(void) _gc_lock(const char *file, int line);
+#define gc_lock2(f) (_gc_lock2((f), __FILE__, __LINE__))
+PyAPI_FUNC(void) _gc_lock2(furtex_t *, const char *file, int line);
 PyAPI_FUNC(void) gc_unlock(void);
 extern PyGC_Head *_PyGC_generation0;
 
