@@ -314,9 +314,11 @@ PyObject_CallFinalizerFromDealloc(PyObject *self)
      * cause a recursive call.
      */
     assert(Py_REFCNT(self) > 0);
-    Py_DECREF(self);
-    if (Py_REFCNT(self) == 0)
+    if (Py_REFCNT(self) == 1) {
+	Py_REFCNT_Initialize(self, 0);
         return 0;         /* this is the normal path out */
+    }
+    Py_DECREF(self);
 
     /* tp_finalize resurrected it!  Make it look like the original Py_DECREF
      * never happened.
