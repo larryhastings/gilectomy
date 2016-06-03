@@ -85,6 +85,9 @@ typedef struct _ts {
     int tracing;
     int use_tracing;
 
+    /* Track to what extent parallelism is hurting refcounting */
+    py_time_refcounts_t py_time_refcounts;
+
     Py_tracefunc c_profilefunc;
     Py_tracefunc c_tracefunc;
     PyObject *c_profileobj;

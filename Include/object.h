@@ -93,10 +93,11 @@ whose size is determined when the object is allocated.
 */
 
 #if 0 /* ACTIVATE STATS */
+    /* Factor of two speed cost for PY_TIME_REFCOUNTS currently */
+    #define PY_TIME_REFCOUNTS
     #define FUTEX_WANT_STATS
     #define FURTEX_WANT_STATS
     #define GC_TRACK_STATS
-    #define PY_TIME_REFCOUNTS
 
     #define CYCLES_PER_SEC 2600000000
     #define F_CYCLES_PER_SEC ((double)CYCLES_PER_SEC)
@@ -107,9 +108,16 @@ whose size is determined when the object is allocated.
 #define PyMIN(a, b) ((a)<(b)?(a):(b))
 #endif /* FUTEX_WANT_STATS || FURTEX_WANT_STATS */
 
+#ifdef __APPLE__
+#define USE_PTHREAD_MUTEX
+#else
+#define USE_LINUX_FUTEX
+#endif
 
 #include <errno.h>
+#ifdef USE_LINUX_FUTEX
 #include <linux/futex.h>
+#endif
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -122,7 +130,21 @@ whose size is determined when the object is allocated.
 #include <inttypes.h>
 #include <x86intrin.h>
 
+#if defined(__APPLE__)
+#import <mach/mach_time.h>
+#endif  /* __APPLE__ */
 
+Py_LOCAL_INLINE(uint64_t) fast_get_cycles(void)
+{
+#ifdef __APPLE__
+    return mach_absolute_time();    
+#else
+    unsigned int t;
+    return __rdtscp(&t);
+#endif  /* __APPLE__ */
+}
+
+#ifdef USE_LINUX_FUTEX
 Py_LOCAL_INLINE(int) syscall_futex(int *futex, int operation, int value) {
     return syscall(SYS_futex, futex, operation, value, NULL, NULL, NULL);
    }
@@ -132,10 +154,20 @@ Py_LOCAL_INLINE(int) syscall_futex(int *futex, int operation, int value) {
 
 #define futex_wake(futex, value) \
     (syscall_futex(futex, FUTEX_WAKE_PRIVATE, value))
+#endif
 
 
 typedef struct {
+#ifdef USE_LINUX_FUTEX
     int futex;
+#endif
+
+#ifdef USE_PTHREAD_MUTEX
+    // An initialized flag is need because some futex's are 0-initialized
+    // e.g. list instances created via PyType_GenericNew
+    int initialized;
+    pthread_mutex_t mutex;
+#endif
     const char *description;
 #ifdef FUTEX_WANT_STATS
     uint64_t no_contention_count;
@@ -148,18 +180,32 @@ typedef struct {
 #endif
 } futex_t;
 
+#if defined(USE_LINUX_FUTEX)
 #define FUTEX_STATIC_INIT(description) { 0, description FUTEX_STATS_STATIC_INIT }
+#elif defined(USE_PTHREAD_MUTEX)
+#define FUTEX_STATIC_INIT(description) { 1, PTHREAD_MUTEX_INITIALIZER, description FUTEX_STATS_STATIC_INIT }
+#endif
 
 Py_LOCAL_INLINE(void) futex_init(futex_t *f) {
+#ifdef USE_LINUX_FUTEX
     f->futex = 0;
+#endif
+
+#ifdef USE_PTHREAD_MUTEX
+    if (!f->initialized) {
+        pthread_mutex_init(&f->mutex, NULL);
+        f->initialized = 1;
+    }
+#endif
 }
 
 Py_LOCAL_INLINE(void) futex_lock(futex_t *f) {
 #ifdef FUTEX_WANT_STATS
-    unsigned int _;
-    uint64_t start = __rdtscp(&_);
+    uint64_t start = fast_get_cycles();
     uint64_t delta;
 #endif /* FUTEX_WANT_STATS */
+
+#ifdef USE_LINUX_FUTEX
     int current = __sync_val_compare_and_swap(&(f->futex), 0, 1);
     if (current == 0)
         goto stats;
@@ -169,9 +215,25 @@ Py_LOCAL_INLINE(void) futex_lock(futex_t *f) {
         futex_wait(&(f->futex), 2);
         current = __sync_lock_test_and_set(&(f->futex), 2);
     }
+#endif /* USE_LINUX_FUTEX */
+
+#ifdef USE_PTHREAD_MUTEX
+    if (!f->initialized) {
+        futex_init(f);
+    }
+
+    {
+        int r = pthread_mutex_lock(&f->mutex);
+        if ( r != 0 ) {
+            fprintf(stderr, "pthread_mutex_lock failed: %s\n", strerror(r));
+        }
+    }
+    goto stats;
+#endif
+
 stats:
 #ifdef FUTEX_WANT_STATS
-    delta = __rdtscp(&_) - start;
+    delta = fast_get_cycles() - start;
     if (delta <= 250)
         f->no_contention_count++;
     else {
@@ -184,10 +246,21 @@ stats:
 }
 
 Py_LOCAL_INLINE(void) futex_unlock(futex_t *f) {
+#ifdef USE_LINUX_FUTEX
     if (__sync_fetch_and_sub(&(f->futex), 1) != 1) {
         f->futex = 0;
         futex_wake(&(f->futex), 1);
     }
+#endif
+
+#ifdef USE_PTHREAD_MUTEX
+    {
+        int r = pthread_mutex_unlock(&f->mutex);
+        if ( r != 0 ) {
+            fprintf(stderr, "pthread_mutex_unlock failed: %s\n", strerror(r));
+        }
+    }
+#endif
 }
 
 
@@ -202,14 +275,14 @@ Py_LOCAL_INLINE(void) futex_reset_stats(futex_t *f) {
 
 Py_LOCAL_INLINE(void) futex_stats(futex_t *f) {
 #ifdef FUTEX_WANT_STATS
-    printf("[%s] %ld total locks\n", f->description, f->no_contention_count + f->contention_count);
-    printf("[%s] %ld locks without contention\n", f->description, f->no_contention_count);
-    printf("[%s] %ld locks with contention\n", f->description, f->contention_count);
+    printf("[%s] %ld total locks\n", f->description, (long)(f->no_contention_count + f->contention_count));
+    printf("[%s] %ld locks without contention\n", f->description, (long)f->no_contention_count);
+    printf("[%s] %ld locks with contention\n", f->description, (long)f->contention_count);
     if (f->contention_count) {
-        printf("[%s] %ld contention total delay in cycles\n", f->description, f->contention_total_delay);
+        printf("[%s] %ld contention total delay in cycles\n", f->description, (long)f->contention_total_delay);
         printf("[%s] %f contention total delay in cpu-seconds\n", f->description, f->contention_total_delay / F_CYCLES_PER_SEC);
         printf("[%s] %f contention average delay in cycles\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
-        printf("[%s] %ld contention max delay in cycles\n", f->description, f->contention_max_delta);
+        printf("[%s] %ld contention max delay in cycles\n", f->description, (long)f->contention_max_delta);
     }
     futex_reset_stats(f);
 /*
@@ -219,6 +292,46 @@ Py_LOCAL_INLINE(void) futex_stats(futex_t *f) {
 #endif /* FUTEX_WANT_STATS */
 }
 
+typedef struct {
+    uint64_t total_refcount_time;
+    uint64_t total_refcounts;
+} py_time_refcounts_t;
+
+extern py_time_refcounts_t py_time_refcounts;
+
+#define PY_TIME_FETCH_AND_ADD(t, fieldname, delta) \
+    if (t) { t->fieldname += delta; } else {        \
+    __sync_fetch_and_add(&(py_time_refcounts.fieldname), delta); \
+    }
+
+Py_LOCAL_INLINE(void) py_time_refcounts_setzero(py_time_refcounts_t *t) {
+#ifdef PY_TIME_REFCOUNTS
+    t->total_refcount_time = 0;
+    t->total_refcounts = 0;
+#endif /* PY_TIME_REFCOUNTS */
+}
+
+py_time_refcounts_t* PyState_GetThisThreadPyTimeRefcounts(void);
+
+Py_LOCAL_INLINE(void) py_time_refcounts_persist(py_time_refcounts_t *t) {
+#ifdef PY_TIME_REFCOUNTS
+    py_time_refcounts_t* const zero = 0;
+    PY_TIME_FETCH_AND_ADD(zero, total_refcount_time, t->total_refcount_time);
+    PY_TIME_FETCH_AND_ADD(zero, total_refcounts, t->total_refcounts);
+    py_time_refcounts_setzero(t);
+#endif /* PY_TIME_REFCOUNTS */
+}
+
+Py_LOCAL_INLINE(void) py_time_refcounts_stats(void) {
+#ifdef PY_TIME_REFCOUNTS
+    if (py_time_refcounts.total_refcounts) {
+        printf("[py_incr/py_decr] %lu total calls\n", py_time_refcounts.total_refcounts);
+        printf("[py_incr/py_decr] %lu total time spent, in cycles\n", py_time_refcounts.total_refcount_time);
+        printf("[py_incr/py_decr] %f total time spent, in seconds\n", py_time_refcounts.total_refcount_time / 2600000000.0);
+        printf("[py_incr/py_decr] %f average cycles for a py_incr/py_decr\n", ((double)py_time_refcounts.total_refcount_time) / py_time_refcounts.total_refcounts);
+    }
+#endif /* PY_TIME_REFCOUNTS */
+}
 
 /*
 ** furtex
@@ -247,6 +360,7 @@ typedef struct {
 
 Py_LOCAL_INLINE(void) furtex_init(furtex_t *f) {
     memset(f, 0, sizeof(*f));
+    futex_init(&f->futex);
 }
 
 Py_LOCAL_INLINE(void) furtex_lock(furtex_t *f) {
@@ -261,11 +375,11 @@ Py_LOCAL_INLINE(void) furtex_lock(furtex_t *f) {
         return;
     }
 #ifdef FURTEX_WANT_STATS
-    start = __rdtscp(&_);
+    start = fast_get_cycles();
 #endif /* FURTEX_WANT_STATS */
     futex_lock(&(f->futex));
 #ifdef FURTEX_WANT_STATS
-    delta = __rdtscp(&_) - start;
+    delta = fast_get_cycles() - start;
     if (delta <= 250)
         f->no_contention_count++;
     else {
@@ -298,14 +412,14 @@ Py_LOCAL_INLINE(void) furtex_reset_stats(furtex_t *f) {
 
 Py_LOCAL_INLINE(void) furtex_stats(furtex_t *f) {
 #ifdef FURTEX_WANT_STATS
-    printf("[%s] %ld total locks\n", f->description, f->no_contention_count + f->contention_count);
-    printf("[%s] %ld locks without contention\n", f->description, f->no_contention_count);
-    printf("[%s] %ld locks with contention\n", f->description, f->contention_count);
+    printf("[%s] %ld total locks\n", f->description, (long)(f->no_contention_count + f->contention_count));
+    printf("[%s] %ld locks without contention\n", f->description, (long)f->no_contention_count);
+    printf("[%s] %ld locks with contention\n", f->description, (long)f->contention_count);
     if (f->contention_count) {
-        printf("[%s] %ld contention total delay in cycles\n", f->description, f->contention_total_delay);
+        printf("[%s] %ld contention total delay in cycles\n", f->description, (long)f->contention_total_delay);
         printf("[%s] %f contention total delay in cpu-seconds\n", f->description, f->contention_total_delay / 2600000000.0);
         printf("[%s] %f contention average delay in cycles\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
-        printf("[%s] %ld contention max delay in cycles\n", f->description, f->contention_max_delta);
+        printf("[%s] %ld contention max delay in cycles\n", f->description, (long)f->contention_max_delta);
     }
     furtex_reset_stats(f);
 /*
@@ -1016,30 +1130,27 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
 
 #ifdef PY_TIME_REFCOUNTS
 
-extern uint64_t total_refcount_time;
-extern uint64_t total_refcounts;
-
 Py_LOCAL_INLINE(int) __py_incref__(PyObject *o) {
     uint64_t start, delta;
-    unsigned int _;
+    py_time_refcounts_t *t = PyState_GetThisThreadPyTimeRefcounts();
     _Py_INC_REFTOTAL;
-    start = __rdtscp(&_);
+    start = fast_get_cycles();
     __sync_fetch_and_add(&_Py_REFCNT(o), 1);
-    delta = __rdtscp(&_) - start;
-    __sync_fetch_and_add(&total_refcount_time, delta);
-    __sync_fetch_and_add(&total_refcounts, 1);
+    delta = fast_get_cycles() - start;
+    PY_TIME_FETCH_AND_ADD(t, total_refcount_time, delta);
+    PY_TIME_FETCH_AND_ADD(t, total_refcounts, 1);
     return 1;
 }
 
 Py_LOCAL_INLINE(void) __py_decref__(PyObject *o) {
     uint64_t start, delta, new_rc;
-    unsigned int _;
+    py_time_refcounts_t *t = PyState_GetThisThreadPyTimeRefcounts();
     _Py_DEC_REFTOTAL;
-    start = __rdtscp(&_);
+    start = fast_get_cycles();
     new_rc = __sync_sub_and_fetch(&_Py_REFCNT(o), 1);
-    delta = __rdtscp(&_) - start;
-    __sync_fetch_and_add(&total_refcount_time, delta);
-    __sync_fetch_and_add(&total_refcounts, 1);
+    delta = fast_get_cycles() - start;
+    PY_TIME_FETCH_AND_ADD(t, total_refcount_time, delta);
+    PY_TIME_FETCH_AND_ADD(t, total_refcounts, 1);
     if (new_rc != 0)
         _Py_CHECK_REFCNT(o)
     else
