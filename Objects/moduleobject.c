@@ -88,6 +88,7 @@ PyModule_NewObject(PyObject *name)
     m->md_weaklist = NULL;
     m->md_name = NULL;
     m->md_dict = PyDict_New();
+    ((PyDictObject *)(m->md_dict))->ma_lock.description = PyUnicode_AsUTF8(name);
     if (module_init_dict(m, m->md_dict, name, NULL) != 0)
         goto fail;
     PyObject_GC_Track(m);

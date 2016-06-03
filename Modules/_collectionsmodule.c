@@ -7,6 +7,10 @@
 #include <sys/types.h>          /* For size_t */
 #endif
 
+static furtex_t module_furtex = FURTEX_STATIC_INIT("collections module lock");
+#define module_lock() furtex_lock(&module_furtex)
+#define module_unlock() furtex_unlock(&module_furtex)
+
 /* collections module implementation of a deque() datatype
    Written and maintained by Raymond D. Hettinger <python@rcn.com>
 */
@@ -120,10 +124,14 @@ static block *freeblocks[MAXFREEBLOCKS];
 static block *
 newblock(void) {
     block *b;
+    module_lock();
     if (numfreeblocks) {
         numfreeblocks--;
-        return freeblocks[numfreeblocks];
+        b = freeblocks[numfreeblocks];
+        module_unlock();
+        return b;
     }
+    module_unlock();
     b = PyMem_Malloc(sizeof(block));
     if (b != NULL) {
         return b;
@@ -135,10 +143,13 @@ newblock(void) {
 static void
 freeblock(block *b)
 {
+    module_lock();
     if (numfreeblocks < MAXFREEBLOCKS) {
         freeblocks[numfreeblocks] = b;
         numfreeblocks++;
+        module_unlock();
     } else {
+        module_unlock();
         PyMem_Free(b);
     }
 }

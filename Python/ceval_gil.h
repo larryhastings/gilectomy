@@ -129,11 +129,12 @@ static MUTEX_T switch_mutex;
 
 static int gil_created(void)
 {
-    return _Py_atomic_load_explicit(&gil_locked, _Py_memory_order_acquire) >= 0;
+    return 1; // _Py_atomic_load_explicit(&gil_locked, _Py_memory_order_acquire) >= 0;
 }
 
 static void create_gil(void)
 {
+    return;
     MUTEX_INIT(gil_mutex);
 #ifdef FORCE_SWITCHING
     MUTEX_INIT(switch_mutex);
@@ -149,6 +150,7 @@ static void create_gil(void)
 
 static void destroy_gil(void)
 {
+    return;
     /* some pthread-like implementations tie the mutex to the cond
      * and must have the cond destroyed first.
      */
@@ -164,6 +166,7 @@ static void destroy_gil(void)
 
 static void recreate_gil(void)
 {
+    return;
     _Py_ANNOTATE_RWLOCK_DESTROY(&gil_locked);
     /* XXX should we destroy the old OS resources here? */
     create_gil();
@@ -171,6 +174,7 @@ static void recreate_gil(void)
 
 static void drop_gil(PyThreadState *tstate)
 {
+    return;
     if (!_Py_atomic_load_relaxed(&gil_locked))
         Py_FatalError("drop_gil: GIL is not locked");
     /* tstate is allowed to be NULL (early interpreter init) */
@@ -207,6 +211,7 @@ static void drop_gil(PyThreadState *tstate)
 static void take_gil(PyThreadState *tstate)
 {
     int err;
+    return;
     if (tstate == NULL)
         Py_FatalError("take_gil: NULL tstate");
 

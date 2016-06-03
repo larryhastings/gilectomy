@@ -3,6 +3,10 @@
 #include "Python.h"
 #include "structmember.h"
 
+static furtex_t module_furtex = FURTEX_STATIC_INIT("class module lock");
+#define module_lock() furtex_lock(&module_furtex)
+#define module_unlock() furtex_unlock(&module_furtex)
+
 #define TP_DESCR_GET(t) ((t)->tp_descr_get)
 
 /* Free list for method objects to safe malloc/free overhead
@@ -50,13 +54,16 @@ PyMethod_New(PyObject *func, PyObject *self)
         PyErr_BadInternalCall();
         return NULL;
     }
+    module_lock();
     im = free_list;
     if (im != NULL) {
         free_list = (PyMethodObject *)(im->im_self);
-        (void)PyObject_INIT(im, &PyMethod_Type);
         numfree--;
+        module_unlock();
+        (void)PyObject_INIT(im, &PyMethod_Type);
     }
     else {
+        module_unlock();
         im = PyObject_GC_New(PyMethodObject, &PyMethod_Type);
         if (im == NULL)
             return NULL;
@@ -196,12 +203,15 @@ method_dealloc(PyMethodObject *im)
         PyObject_ClearWeakRefs((PyObject *)im);
     Py_DECREF(im->im_func);
     Py_XDECREF(im->im_self);
+    module_lock();
     if (numfree < PyMethod_MAXFREELIST) {
         im->im_self = (PyObject *)free_list;
         free_list = im;
         numfree++;
+        module_unlock();
     }
     else {
+        module_unlock();
         PyObject_GC_Del(im);
     }
 }
@@ -392,15 +402,19 @@ PyTypeObject PyMethod_Type = {
 int
 PyMethod_ClearFreeList(void)
 {
-    int freelist_size = numfree;
+    int freelist_size;
 
+    module_lock();
+    freelist_size = numfree;
     while (free_list) {
         PyMethodObject *im = free_list;
         free_list = (PyMethodObject *)(im->im_self);
+        module_unlock();
         PyObject_GC_Del(im);
-        numfree--;
+        module_lock();
     }
     assert(numfree == 0);
+    module_unlock();
     return freelist_size;
 }
 
@@ -414,9 +428,11 @@ PyMethod_Fini(void)
 void
 _PyMethod_DebugMallocStats(FILE *out)
 {
+    module_lock();
     _PyDebugAllocatorStats(out,
                            "free PyMethodObject",
                            numfree, sizeof(PyMethodObject));
+    module_unlock();
 }
 
 /* ------------------------------------------------------------------------

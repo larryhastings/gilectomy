@@ -17,6 +17,10 @@ static PyObject *ThreadError;
 static long nb_threads = 0;
 static PyObject *str_dict;
 
+static furtex_t module_furtex = FURTEX_STATIC_INIT("_threadmodule lock");
+#define module_lock() furtex_lock(&module_furtex)
+#define module_unlock() furtex_unlock(&module_furtex)
+
 _Py_IDENTIFIER(stderr);
 
 /* Lock objects */
@@ -994,7 +998,9 @@ t_bootstrap(void *boot_raw)
     tstate->thread_id = PyThread_get_thread_ident();
     _PyThreadState_Init(tstate);
     PyEval_AcquireThread(tstate);
+    module_lock();
     nb_threads++;
+    module_unlock();
     res = PyEval_CallObjectWithKeywords(
         boot->func, boot->args, boot->keyw);
     if (res == NULL) {
@@ -1022,7 +1028,9 @@ t_bootstrap(void *boot_raw)
     Py_DECREF(boot->args);
     Py_XDECREF(boot->keyw);
     PyMem_DEL(boot_raw);
+    module_lock();
     nb_threads--;
+    module_unlock();
     PyThreadState_Clear(tstate);
     PyThreadState_DeleteCurrent();
     PyThread_exit_thread();
@@ -1162,7 +1170,11 @@ A thread's identity may be reused for another thread after it exits.");
 static PyObject *
 thread__count(PyObject *self)
 {
-    return PyLong_FromLong(nb_threads);
+    PyObject* result = NULL;
+    module_lock();
+    result = PyLong_FromLong(nb_threads);
+    module_unlock();
+    return result;
 }
 
 PyDoc_STRVAR(_count_doc,

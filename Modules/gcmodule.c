@@ -912,6 +912,10 @@ collect(int generation, Py_ssize_t *n_collected, Py_ssize_t *n_uncollectable,
 
     struct gc_generation_stats *stats = &generation_stats[generation];
 
+    /* GILECTOMY: disable GC for now */
+    return 0;
+
+    gc_lock();
     if (debug & DEBUG_STATS) {
         PySys_WriteStderr("gc: collecting generation %d...\n",
                           generation);
@@ -1068,6 +1072,7 @@ collect(int generation, Py_ssize_t *n_collected, Py_ssize_t *n_uncollectable,
     stats->collections++;
     stats->collected += m;
     stats->uncollectable += n;
+    gc_unlock();
     return n+m;
 }
 
@@ -1082,8 +1087,11 @@ invoke_gc_callback(const char *phase, int generation,
     PyObject *info = NULL;
 
     /* we may get called very early */
-    if (callbacks == NULL)
+    gc_lock();
+    if (callbacks == NULL) {
+        gc_unlock();
         return;
+    }
     /* The local variable cannot be rebound, check it for sanity */
     assert(callbacks != NULL && PyList_CheckExact(callbacks));
     if (PyList_GET_SIZE(callbacks) != 0) {
@@ -1093,6 +1101,7 @@ invoke_gc_callback(const char *phase, int generation,
             "uncollectable", uncollectable);
         if (info == NULL) {
             PyErr_WriteUnraisable(NULL);
+            gc_unlock();
             return;
         }
     }
@@ -1106,6 +1115,7 @@ invoke_gc_callback(const char *phase, int generation,
         Py_DECREF(cb);
     }
     Py_XDECREF(info);
+    gc_unlock();
 }
 
 /* Perform garbage collection of a generation and invoke
@@ -1115,9 +1125,11 @@ static Py_ssize_t
 collect_with_callback(int generation)
 {
     Py_ssize_t result, collected, uncollectable;
+    gc_lock();
     invoke_gc_callback("start", generation, 0, 0);
     result = collect(generation, &collected, &uncollectable, 0);
     invoke_gc_callback("stop", generation, collected, uncollectable);
+    gc_unlock();
     return result;
 }
 
@@ -1127,6 +1139,7 @@ collect_generations(void)
     int i;
     Py_ssize_t n = 0;
 
+    gc_lock();
     /* Find the oldest generation (highest numbered) where the count
      * exceeds the threshold.  Objects in the that generation and
      * generations younger than it will be collected. */
@@ -1143,6 +1156,7 @@ collect_generations(void)
             break;
         }
     }
+    gc_unlock();
     return n;
 }
 
@@ -1206,6 +1220,7 @@ gc_collect(PyObject *self, PyObject *args, PyObject *kws)
         return NULL;
     }
 
+    gc_lock();
     if (collecting)
         n = 0; /* already collecting, don't do anything */
     else {
@@ -1213,6 +1228,7 @@ gc_collect(PyObject *self, PyObject *args, PyObject *kws)
         n = collect_with_callback(genarg);
         collecting = 0;
     }
+    gc_unlock();
 
     return PyLong_FromSsize_t(n);
 }
@@ -1234,7 +1250,12 @@ PyDoc_STRVAR(gc_set_debug__doc__,
 static PyObject *
 gc_set_debug(PyObject *self, PyObject *args)
 {
-    if (!PyArg_ParseTuple(args, "i:set_debug", &debug))
+    int status;
+    gc_lock();
+    status = PyArg_ParseTuple(args, "i:set_debug", &debug);
+    gc_unlock();
+
+    if (!status)
         return NULL;
 
     Py_INCREF(Py_None);
@@ -1249,7 +1270,11 @@ PyDoc_STRVAR(gc_get_debug__doc__,
 static PyObject *
 gc_get_debug(PyObject *self, PyObject *noargs)
 {
-    return Py_BuildValue("i", debug);
+    PyObject *result;
+    gc_lock();
+    result = Py_BuildValue("i", debug);
+    gc_unlock();
+    return result;
 }
 
 PyDoc_STRVAR(gc_set_thresh__doc__,
@@ -1262,16 +1287,20 @@ static PyObject *
 gc_set_thresh(PyObject *self, PyObject *args)
 {
     int i;
+    gc_lock();
     if (!PyArg_ParseTuple(args, "i|ii:set_threshold",
                           &generations[0].threshold,
                           &generations[1].threshold,
-                          &generations[2].threshold))
+                          &generations[2].threshold)) {
+        gc_unlock();
         return NULL;
+    }
     for (i = 2; i < NUM_GENERATIONS; i++) {
         /* generations higher than 2 get the same threshold */
         generations[i].threshold = generations[2].threshold;
     }
 
+    gc_unlock();
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -1284,10 +1313,14 @@ PyDoc_STRVAR(gc_get_thresh__doc__,
 static PyObject *
 gc_get_thresh(PyObject *self, PyObject *noargs)
 {
-    return Py_BuildValue("(iii)",
+    PyObject *result;
+    gc_lock();
+    result = Py_BuildValue("(iii)",
                          generations[0].threshold,
                          generations[1].threshold,
                          generations[2].threshold);
+    gc_unlock();
+    return result;
 }
 
 PyDoc_STRVAR(gc_get_count__doc__,
@@ -1298,10 +1331,14 @@ PyDoc_STRVAR(gc_get_count__doc__,
 static PyObject *
 gc_get_count(PyObject *self, PyObject *noargs)
 {
-    return Py_BuildValue("(iii)",
+    PyObject *result;
+    gc_lock();
+    result = Py_BuildValue("(iii)",
                          generations[0].count,
                          generations[1].count,
                          generations[2].count);
+    gc_unlock();
+    return result;
 }
 
 static int
@@ -1344,12 +1381,15 @@ gc_get_referrers(PyObject *self, PyObject *args)
     PyObject *result = PyList_New(0);
     if (!result) return NULL;
 
+    gc_lock();
     for (i = 0; i < NUM_GENERATIONS; i++) {
         if (!(gc_referrers_for(args, GEN_HEAD(i), result))) {
             Py_DECREF(result);
+            gc_unlock();
             return NULL;
         }
     }
+    gc_unlock();
     return result;
 }
 
@@ -1373,6 +1413,7 @@ gc_get_referents(PyObject *self, PyObject *args)
     if (result == NULL)
         return NULL;
 
+    gc_lock();
     for (i = 0; i < PyTuple_GET_SIZE(args); i++) {
         traverseproc traverse;
         PyObject *obj = PyTuple_GET_ITEM(args, i);
@@ -1384,9 +1425,11 @@ gc_get_referents(PyObject *self, PyObject *args)
             continue;
         if (traverse(obj, (visitproc)referentsvisit, result)) {
             Py_DECREF(result);
+            gc_unlock();
             return NULL;
         }
     }
+    gc_unlock();
     return result;
 }
 
@@ -1405,12 +1448,15 @@ gc_get_objects(PyObject *self, PyObject *noargs)
     result = PyList_New(0);
     if (result == NULL)
         return NULL;
+    gc_lock();
     for (i = 0; i < NUM_GENERATIONS; i++) {
         if (append_objects(result, GEN_HEAD(i))) {
             Py_DECREF(result);
+            gc_unlock();
             return NULL;
         }
     }
+    gc_unlock();
     return result;
 }
 
@@ -1426,6 +1472,7 @@ gc_get_stats(PyObject *self, PyObject *noargs)
     PyObject *result;
     struct gc_generation_stats stats[NUM_GENERATIONS], *st;
 
+    gc_lock();
     /* To get consistent values despite allocations while constructing
        the result list, we use a snapshot of the running stats. */
     for (i = 0; i < NUM_GENERATIONS; i++) {
@@ -1433,8 +1480,10 @@ gc_get_stats(PyObject *self, PyObject *noargs)
     }
 
     result = PyList_New(0);
-    if (result == NULL)
+    if (result == NULL) {
+        gc_unlock();
         return NULL;
+    }
 
     for (i = 0; i < NUM_GENERATIONS; i++) {
         PyObject *dict;
@@ -1452,9 +1501,11 @@ gc_get_stats(PyObject *self, PyObject *noargs)
         }
         Py_DECREF(dict);
     }
+    gc_unlock();
     return result;
 
 error:
+    gc_unlock();
     Py_XDECREF(result);
     return NULL;
 }
@@ -1472,10 +1523,12 @@ gc_is_tracked(PyObject *self, PyObject *obj)
 {
     PyObject *result;
 
+    gc_lock();
     if (PyObject_IS_GC(obj) && IS_TRACKED(obj))
         result = Py_True;
     else
         result = Py_False;
+    gc_unlock();
     Py_INCREF(result);
     return result;
 }
@@ -1532,33 +1585,70 @@ static struct PyModuleDef gcmodule = {
     NULL               /* m_free */
 };
 
+static furtex_t gc_furtex = FURTEX_STATIC_INIT("gc lock");
+
+void gc_lock(void)
+{
+    furtex_lock(&gc_furtex);
+}
+
+void gc_lock2(furtex_t *f2)
+{
+    if (f2 && (f2 <= &gc_furtex))
+        furtex_lock(f2);
+    furtex_lock(&gc_furtex);
+    if (f2 > &gc_furtex)
+        furtex_lock(f2);
+}
+
+void gc_unlock(void)
+{
+    furtex_unlock(&gc_furtex);
+}
+
 PyMODINIT_FUNC
 PyInit_gc(void)
 {
     PyObject *m;
+
 
     m = PyModule_Create(&gcmodule);
 
     if (m == NULL)
         return NULL;
 
+    gc_lock();
     if (garbage == NULL) {
         garbage = PyList_New(0);
-        if (garbage == NULL)
+        if (garbage == NULL) {
+            gc_unlock();
             return NULL;
+        }
     }
     Py_INCREF(garbage);
-    if (PyModule_AddObject(m, "garbage", garbage) < 0)
+    if (PyModule_AddObject(m, "garbage", garbage) < 0) {
+        gc_unlock();
         return NULL;
+    }
 
     if (callbacks == NULL) {
         callbacks = PyList_New(0);
-        if (callbacks == NULL)
+        if (callbacks == NULL) {
+            gc_unlock();
             return NULL;
+
+        }
     }
     Py_INCREF(callbacks);
-    if (PyModule_AddObject(m, "callbacks", callbacks) < 0)
+    if (PyModule_AddObject(m, "callbacks", callbacks) < 0) {
+        gc_unlock();
         return NULL;
+    }
+
+#ifdef GC_TRACK_STATS
+    printf("gc_furtex description %s\n", gc_furtex.description);
+    furtex_stats(&gc_furtex);
+#endif /* GC_TRACK_STATS */
 
 #define ADD_INT(NAME) if (PyModule_AddIntConstant(m, #NAME, NAME) < 0) return NULL
     ADD_INT(DEBUG_STATS);
@@ -1576,6 +1666,7 @@ PyGC_Collect(void)
 {
     Py_ssize_t n;
 
+    gc_lock();
     if (collecting)
         n = 0; /* already collecting, don't do anything */
     else {
@@ -1583,6 +1674,7 @@ PyGC_Collect(void)
         n = collect_with_callback(NUM_GENERATIONS - 1);
         collecting = 0;
     }
+    gc_unlock();
 
     return n;
 }
@@ -1598,6 +1690,7 @@ _PyGC_CollectNoFail(void)
        during interpreter shutdown (and then never finish it).
        See http://bugs.python.org/issue8713#msg195178 for an example.
        */
+    gc_lock();
     if (collecting)
         n = 0;
     else {
@@ -1605,6 +1698,7 @@ _PyGC_CollectNoFail(void)
         n = collect(NUM_GENERATIONS - 1, NULL, NULL, 1);
         collecting = 0;
     }
+    gc_unlock();
     return n;
 }
 
@@ -1648,6 +1742,10 @@ void
 _PyGC_Fini(void)
 {
     Py_CLEAR(callbacks);
+#ifdef GC_TRACK_STATS
+    printf("gc_furtex description %s\n", gc_furtex.description);
+    furtex_stats(&gc_furtex);
+#endif /* GC_TRACK_STATS */
 }
 
 /* for debugging */
@@ -1698,6 +1796,7 @@ _PyObject_GC_Alloc(int use_calloc, size_t basicsize)
         return PyErr_NoMemory();
     g->gc.gc_refs = 0;
     _PyGCHead_SET_REFS(g, GC_UNTRACKED);
+    gc_lock();
     generations[0].count++; /* number of allocated GC objects */
     if (generations[0].count > generations[0].threshold &&
         enabled &&
@@ -1708,6 +1807,7 @@ _PyObject_GC_Alloc(int use_calloc, size_t basicsize)
         collect_generations();
         collecting = 0;
     }
+    gc_unlock();
     op = FROM_GC(g);
     return op;
 }
@@ -1769,10 +1869,12 @@ void
 PyObject_GC_Del(void *op)
 {
     PyGC_Head *g = AS_GC(op);
+    gc_lock();
     if (IS_TRACKED(op))
         gc_list_remove(g);
     if (generations[0].count > 0) {
         generations[0].count--;
     }
+    gc_unlock();
     PyObject_FREE(g);
 }

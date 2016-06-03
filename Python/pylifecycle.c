@@ -43,6 +43,9 @@ _Py_IDENTIFIER(stderr);
 extern "C" {
 #endif
 
+uint64_t total_refcount_time = 0;
+uint64_t total_refcounts = 0;
+
 extern wchar_t *Py_GetPath(void);
 
 extern grammar _PyParser_Grammar; /* From graminit.c */
@@ -324,7 +327,7 @@ _Py_InitializeEx_Private(int install_sigs, int install_importlib)
     tstate = PyThreadState_New(interp);
     if (tstate == NULL)
         Py_FatalError("Py_Initialize: can't make first thread");
-    (void) PyThreadState_Swap(tstate);
+    // (void) PyThreadState_Swap(tstate);
 
 #ifdef WITH_THREAD
     /* We can't call _PyEval_FiniThreads() in Py_FinalizeEx because
@@ -549,6 +552,24 @@ Py_FinalizeEx(void)
     tstate = PyThreadState_GET();
     interp = tstate->interp;
 
+    furtex_stats(&(((PyDictObject *)interp->builtins)->ma_lock));
+    {
+    extern void tupleobject_lock_stats(void);
+    extern void listobject_lock_stats(void);
+    extern void dictobject_lock_stats(void);
+    // extern furtex_t _malloc_lock;
+    dictobject_lock_stats();
+    listobject_lock_stats();
+    tupleobject_lock_stats();
+    // furtex_stats(&_malloc_lock);
+    }
+    if (total_refcounts) {
+        printf("[py_incr/py_decr] %lu total py_incr/py_decr calls\n", total_refcounts);
+        printf("[py_incr/py_decr] %lu total time spent in py_incr/py_decr, in cycles\n", total_refcount_time);
+        printf("[py_incr/py_decr] %f total time spent in py_incr/py_decr, in seconds\n", total_refcount_time / 2600000000.0);
+        printf("[py_incr/py_decr] %f average time for a py_incr/py_decr, in cycles\n", ((double)total_refcount_time) / total_refcounts);
+    }
+
     /* Remaining threads (e.g. daemon threads) will automatically exit
        after taking the GIL (in PyEval_RestoreThread()). */
     _Py_Finalizing = tstate;
@@ -691,7 +712,7 @@ Py_FinalizeEx(void)
 #endif /* WITH_THREAD */
 
     /* Delete current thread. After this, many C API calls become crashy. */
-    PyThreadState_Swap(NULL);
+    // PyThreadState_Swap(NULL);
     PyInterpreterState_Delete(interp);
 
 #ifdef Py_TRACE_REFS
@@ -734,7 +755,8 @@ PyThreadState *
 Py_NewInterpreter(void)
 {
     PyInterpreterState *interp;
-    PyThreadState *tstate, *save_tstate;
+    PyThreadState *tstate;
+    // PyThreadState *save_tstate;
     PyObject *bimod, *sysmod;
 
     if (!initialized)
@@ -750,7 +772,7 @@ Py_NewInterpreter(void)
         return NULL;
     }
 
-    save_tstate = PyThreadState_Swap(tstate);
+    // save_tstate = PyThreadState_Swap(tstate);
 
     /* XXX The following is lax in error checking */
 
@@ -810,7 +832,7 @@ handle_error:
 
     PyErr_PrintEx(0);
     PyThreadState_Clear(tstate);
-    PyThreadState_Swap(save_tstate);
+    // PyThreadState_Swap(save_tstate);
     PyThreadState_Delete(tstate);
     PyInterpreterState_Delete(interp);
 
@@ -834,6 +856,8 @@ Py_EndInterpreter(PyThreadState *tstate)
 {
     PyInterpreterState *interp = tstate->interp;
 
+    furtex_stats(&(((PyDictObject *)interp->builtins)->ma_lock));
+
     if (tstate != PyThreadState_GET())
         Py_FatalError("Py_EndInterpreter: thread is not current");
     if (tstate->frame != NULL)
@@ -846,7 +870,7 @@ Py_EndInterpreter(PyThreadState *tstate)
 
     PyImport_Cleanup();
     PyInterpreterState_Clear(interp);
-    PyThreadState_Swap(NULL);
+    // PyThreadState_Swap(NULL);
     PyInterpreterState_Delete(interp);
 }
 

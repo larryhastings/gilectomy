@@ -10,6 +10,10 @@
 #include <float.h>
 
 
+static furtex_t module_furtex = FURTEX_STATIC_INIT("float lock");
+#define module_lock() furtex_lock(&module_furtex)
+#define module_unlock() furtex_unlock(&module_furtex)
+
 /* Special free list
    free_list is a singly-linked list of available PyFloatObjects, linked
    via abuse of their ob_type members.
@@ -109,11 +113,15 @@ PyFloat_GetInfo(void)
 PyObject *
 PyFloat_FromDouble(double fval)
 {
-    PyFloatObject *op = free_list;
+    PyFloatObject *op;
+    module_lock();
+    op = free_list;
     if (op != NULL) {
         free_list = (PyFloatObject *) Py_TYPE(op);
         numfree--;
+        module_unlock();
     } else {
+        module_unlock();
         op = (PyFloatObject*) PyObject_MALLOC(sizeof(PyFloatObject));
         if (!op)
             return PyErr_NoMemory();
@@ -198,17 +206,22 @@ PyFloat_FromString(PyObject *v)
 static void
 float_dealloc(PyFloatObject *op)
 {
+    module_lock();
     if (PyFloat_CheckExact(op)) {
         if (numfree >= PyFloat_MAXFREELIST)  {
+            module_unlock();
             PyObject_FREE(op);
             return;
         }
         numfree++;
         Py_TYPE(op) = (struct _typeobject *)free_list;
         free_list = op;
+        module_unlock();
     }
-    else
+    else {
+        module_unlock();
         Py_TYPE(op)->tp_free((PyObject *)op);
+    }
 }
 
 double
@@ -1933,16 +1946,25 @@ _PyFloat_Init(void)
 int
 PyFloat_ClearFreeList(void)
 {
-    PyFloatObject *f = free_list, *next;
-    int i = numfree;
-    while (f) {
-        next = (PyFloatObject*) Py_TYPE(f);
-        PyObject_FREE(f);
-        f = next;
-    }
+    PyFloatObject *head;
+    int count, i;
+
+    module_lock();
+    head = free_list;
+    count = numfree;
     free_list = NULL;
     numfree = 0;
-    return i;
+    module_unlock();
+
+    i = 0;
+    while (head) {
+        PyObject *self = (PyObject *)head;
+        head = (PyFloatObject *)Py_TYPE(head);
+        PyObject_FREE(self);
+        i++;
+    }
+    assert(i == count);
+    return count;
 }
 
 void
@@ -1955,9 +1977,11 @@ PyFloat_Fini(void)
 void
 _PyFloat_DebugMallocStats(FILE *out)
 {
+    module_lock();
     _PyDebugAllocatorStats(out,
                            "free PyFloatObject",
                            numfree, sizeof(PyFloatObject));
+    module_unlock();
 }
 
 

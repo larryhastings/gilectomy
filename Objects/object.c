@@ -1266,6 +1266,59 @@ PyObject_Not(PyObject *v)
     return res == 0;
 }
 
+/* Generic lock functions */
+
+void
+PyObject_Lock(PyObject *o)
+{
+    lockfunc lf;
+    if (!o)
+        return;
+
+    lf = o->ob_type->tp_lock;
+    if (lf)
+        lf(o);
+}
+
+void
+PyObject_Unlock(PyObject *o)
+{
+    lockfunc ulf;
+    if (!o)
+        return;
+
+    ulf = o->ob_type->tp_unlock;
+    if (ulf)
+        ulf(o);
+}
+
+void
+PyObject_Lock2(PyObject *o1, PyObject *o2)
+{
+    /*
+    if o1 == o2 we *do* want to lock twice,
+    because they're going to call unlock twice.
+
+    work correctly if either object is null.
+    */
+    if (o1 && (o1 <= o2))
+        PyObject_Lock(o1);
+    if (o2)
+        PyObject_Lock(o2);
+    if (o1 > o2)
+        PyObject_Lock(o1);
+}
+
+void
+PyObject_Unlock2(PyObject *o1, PyObject *o2)
+{
+    if (o1)
+        PyObject_Unlock(o1);
+    if (o2)
+        PyObject_Unlock(o2);
+}
+
+
 /* Test whether an object can be called */
 
 int
