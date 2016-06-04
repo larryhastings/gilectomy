@@ -5,7 +5,6 @@
 #include <x86intrin.h>
 
 typedef pthread_t threadid_t;
-typedef int primitivelock_t;
 #define CURTHREAD_ID pthread_self
 #define THREAD_EQUAL(x, y) pthread_equal(x, y)
 #define ATOMIC_INC(x)  __sync_add_and_fetch(x, 1)
@@ -18,8 +17,9 @@ typedef struct pthread_lock {
 	int initialized;
 	pthread_mutex_t mutex;
 } pthread_lock_t;
+typedef pthread_lock_t primitivelock_t;
 
-#define FUTEX_STATIC_INIT(description) { 1, PTHREAD_MUTEX_INITIALIZER, description FUTEX_STATS_STATIC_INIT }
+#define FUTEX_STATIC_INIT(description) { {1, PTHREAD_MUTEX_INITIALIZER}, description FUTEX_STATS_STATIC_INIT }
 
 Py_LOCAL_INLINE(void) futex_init_primitive(primitivelock_t *lock) {
 	pthread_lock_t* f = (pthread_lock_t*)lock;
