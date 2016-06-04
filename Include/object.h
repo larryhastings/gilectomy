@@ -113,7 +113,7 @@ whose size is determined when the object is allocated.
 
 #define PyObject_HEAD_INIT(type)        \
     { _PyObject_EXTRA_INIT              \
-    1, type },
+    0, type },
 
 #define PyVarObject_HEAD_INIT(type, size)       \
     { PyObject_HEAD_INIT(type) size },
@@ -134,7 +134,7 @@ whose size is determined when the object is allocated.
  */
 typedef struct _object {
     _PyObject_HEAD_EXTRA
-    Py_ssize_t ob_refcnt;
+    Py_ssize_t *ob_refcnt_ptr;
     struct _typeobject *ob_type;
 } PyObject;
 
@@ -143,7 +143,17 @@ typedef struct {
     Py_ssize_t ob_size; /* Number of items in variable part */
 } PyVarObject;
 
-#define Py_REFCNT(ob)           (((PyObject*)(ob))->ob_refcnt)
+/* API Functions for allocating the refcount. */
+void _PyRefcount_New(PyObject *);
+void _PyRefcount_Del(PyObject *);
+
+/* Read-only access to the refcount (for most uses). */
+#define Py_REFCNT(ob)           ((const Py_ssize_t)*(((PyObject*)(ob))->ob_refcnt_ptr))
+/* Read-write access to the refcount (without checking pointer validity). */
+#define _Py_REFCNT(ob)          (*((PyObject*)(ob))->ob_refcnt_ptr)
+/* Assignment to refcount, without checking pointer validity. */
+#define Py_SET_REFCNT(ob, val)  (_Py_REFCNT(ob) = (val))
+
 #define Py_TYPE(ob)             (((PyObject*)(ob))->ob_type)
 #define Py_SIZE(ob)             (((PyVarObject*)(ob))->ob_size)
 
@@ -737,17 +747,18 @@ you can count such references to the type object.)
  * e.g, defining _Py_NewReference five different times in a maze of nested
  * #ifdefs (we used to do that -- it was impenetrable).
  */
+PyAPI_FUNC(PyObject *) _PyDict_Dummy(void);
+
 #ifdef Py_REF_DEBUG
 PyAPI_DATA(Py_ssize_t) _Py_RefTotal;
 PyAPI_FUNC(void) _Py_NegativeRefcount(const char *fname,
                                             int lineno, PyObject *op);
-PyAPI_FUNC(PyObject *) _PyDict_Dummy(void);
 PyAPI_FUNC(Py_ssize_t) _Py_GetRefTotal(void);
 #define _Py_INC_REFTOTAL        _Py_RefTotal++
 #define _Py_DEC_REFTOTAL        _Py_RefTotal--
 #define _Py_REF_DEBUG_COMMA     ,
 #define _Py_CHECK_REFCNT(OP)                                    \
-{       if (((PyObject*)OP)->ob_refcnt < 0)                             \
+{       if (Py_REFCNT((PyObject*)OP) < 0)                       \
                 _Py_NegativeRefcount(__FILE__, __LINE__,        \
                                      (PyObject *)(OP));         \
 }
@@ -794,9 +805,11 @@ PyAPI_FUNC(void) _Py_AddToAllObjects(PyObject *, int force);
 #define _Py_NewReference(op) (                          \
     _Py_INC_TPALLOCS(op) _Py_COUNT_ALLOCS_COMMA         \
     _Py_INC_REFTOTAL  _Py_REF_DEBUG_COMMA               \
-    Py_REFCNT(op) = 1)
+    _PyRefcount_New(op))
 
-#define _Py_ForgetReference(op) _Py_INC_TPFREES(op)
+#define _Py_ForgetReference(op) (                       \
+    _Py_INC_TPFREES(op) _Py_COUNT_ALLOCS_COMMA          \
+    _PyRefcount_Del(op))
 
 #ifdef Py_LIMITED_API
 PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
@@ -807,6 +820,12 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
 #endif
 #endif /* !Py_TRACE_REFS */
 
+/* For PyModuleDefs and other objects that are statically initialized,
+ * allocate the refcount iff it isn't already allocated. Can't do this in
+ * the general case as the object may consist of uninitialized memory. */
+#define _Py_MaybeNewReference(op) (                     \
+    ((PyObject *)(op))->ob_refcnt_ptr == NULL ? _Py_NewReference(op) : 0)
+
 #ifdef PY_TIME_REFCOUNTS
 
 Py_LOCAL_INLINE(int) __py_incref__(PyObject *o) {
@@ -814,7 +833,7 @@ Py_LOCAL_INLINE(int) __py_incref__(PyObject *o) {
     py_time_refcounts_t *t = PyState_GetThisThreadPyTimeRefcounts();
     _Py_INC_REFTOTAL;
     start = fast_get_cycles();
-    ATOMIC_INC(&o->ob_refcnt);
+    ATOMIC_INC(&_Py_REFCNT(o));
     delta = fast_get_cycles() - start;
     PY_TIME_FETCH_AND_ADD(t, total_refcount_time, delta);
     PY_TIME_FETCH_AND_ADD(t, total_refcounts, 1);
@@ -826,7 +845,7 @@ Py_LOCAL_INLINE(void) __py_decref__(PyObject *o) {
     py_time_refcounts_t *t = PyState_GetThisThreadPyTimeRefcounts();
     _Py_DEC_REFTOTAL;
     start = fast_get_cycles();
-    new_rc = ATOMIC_DEC(&(o->ob_refcnt), 1);
+    new_rc = ATOMIC_DEC(&_Py_REFCNT(o), 1);
     delta = fast_get_cycles() - start;
     PY_TIME_FETCH_AND_ADD(t, total_refcount_time, delta);
     PY_TIME_FETCH_AND_ADD(t, total_refcounts, 1);
@@ -846,16 +865,16 @@ Py_LOCAL_INLINE(void) __py_decref__(PyObject *o) {
 
 #define Py_INCREF(op) (                         \
     _Py_INC_REFTOTAL  _Py_REF_DEBUG_COMMA       \
-    ATOMIC_INC(&(((PyObject *)(op))->ob_refcnt)) )
+    ATOMIC_INC(&_Py_REFCNT(op)))
 
-#define Py_DECREF(op)                                   \
-    do {                                                \
-        PyObject *_py_decref_tmp = (PyObject *)(op);    \
-        if (_Py_DEC_REFTOTAL  _Py_REF_DEBUG_COMMA       \
-        ATOMIC_DEC(&(_py_decref_tmp->ob_refcnt)) != 0)  \
-            _Py_CHECK_REFCNT(_py_decref_tmp)            \
-        else                                            \
-            _Py_Dealloc(_py_decref_tmp);                \
+#define Py_DECREF(op)                                      \
+    do {                                                   \
+        PyObject *_py_decref_tmp = (PyObject *)(op);       \
+        if (_Py_DEC_REFTOTAL  _Py_REF_DEBUG_COMMA          \
+            ATOMIC_DEC(&_Py_REFCNT(_py_decref_tmp)) != 0)  \
+            _Py_CHECK_REFCNT(_py_decref_tmp)               \
+        else                                               \
+            _Py_Dealloc(_py_decref_tmp);                   \
     } while (0)
 
 #endif /* PY_TIME_REFCOUNTS */

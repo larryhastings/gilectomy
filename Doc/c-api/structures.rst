@@ -70,7 +70,7 @@ the definition of all other Python objects.
 
    This macro is used to access the :attr:`ob_refcnt` member of a Python
    object.
-   It expands to::
+   It might expand to::
 
       (((PyObject*)(o))->ob_refcnt)
 

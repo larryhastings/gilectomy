@@ -1095,7 +1095,7 @@ subtype_dealloc(PyObject *self)
         }
         if (type->tp_del) {
             type->tp_del(self);
-            if (self->ob_refcnt > 0)
+            if (Py_REFCNT(self) > 0)
                 return;
         }
 
@@ -1163,7 +1163,7 @@ subtype_dealloc(PyObject *self)
 
     if (type->tp_del) {
         type->tp_del(self);
-        if (self->ob_refcnt > 0) {
+        if (Py_REFCNT(self) > 0) {
             /* Resurrected */
             goto endlabel;
         }
@@ -4813,6 +4813,7 @@ PyType_Ready(PyTypeObject *type)
     assert((type->tp_flags & Py_TPFLAGS_READYING) == 0);
 
     type->tp_flags |= Py_TPFLAGS_READYING;
+    _Py_NewReference(type);
 
 #ifdef Py_TRACE_REFS
     /* PyType_Ready is the closest thing we have to a choke point

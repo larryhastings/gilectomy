@@ -169,7 +169,7 @@ PyArena_Free(PyArena *arena)
     block_free(arena->a_head);
     /* This property normally holds, except when the code being compiled
        is sys.getobjects(0), in which case there will be two references.
-    assert(arena->a_objects->ob_refcnt == 1);
+    assert(Py_REFCNT(arena->a_objects) == 1);
     */
 
     Py_DECREF(arena->a_objects);

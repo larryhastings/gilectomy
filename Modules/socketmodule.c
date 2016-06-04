@@ -4146,7 +4146,7 @@ sock_dealloc(PySocketSockObject *s)
     if (s->sock_fd != -1) {
         PyObject *exc, *val, *tb;
         Py_ssize_t old_refcount = Py_REFCNT(s);
-        ++Py_REFCNT(s);
+        ++_Py_REFCNT(s);
         PyErr_Fetch(&exc, &val, &tb);
         if (PyErr_WarnFormat(PyExc_ResourceWarning, 1,
                              "unclosed %R", s))
@@ -4155,7 +4155,7 @@ sock_dealloc(PySocketSockObject *s)
                 PyErr_WriteUnraisable((PyObject *) s);
         PyErr_Restore(exc, val, tb);
         (void) SOCKETCLOSE(s->sock_fd);
-        Py_REFCNT(s) = old_refcount;
+        _Py_REFCNT(s) = old_refcount;
     }
     Py_TYPE(s)->tp_free((PyObject *)s);
 }
@@ -6088,6 +6088,7 @@ PyInit__socket(void)
 #endif
 
     Py_TYPE(&sock_type) = &PyType_Type;
+    PyType_Ready(&sock_type);
     m = PyModule_Create(&socketmodule);
     if (m == NULL)
         return NULL;
