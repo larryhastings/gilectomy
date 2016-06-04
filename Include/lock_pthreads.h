@@ -31,6 +31,7 @@ Py_LOCAL_INLINE(void) futex_init_primitive(primitivelock_t *lock) {
 
 Py_LOCAL_INLINE(void) futex_lock_primitive(primitivelock_t *lock) {
 	pthread_lock_t* f = (pthread_lock_t*)lock;
+    /* assert(f->initialized); */
 	if (!f->initialized) {
 		futex_init_primitive(lock);
 	}

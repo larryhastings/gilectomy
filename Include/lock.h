@@ -86,6 +86,10 @@ typedef struct {
 #endif
 } futex_t;
 
+Py_LOCAL_INLINE(void) futex_init(futex_t *f) {
+    futex_init_primitive(&f->futex);
+}
+
 Py_LOCAL_INLINE(void) futex_lock(futex_t *f) {
 #ifdef FUTEX_WANT_STATS
 	unsigned int _;
@@ -159,6 +163,7 @@ typedef struct {
 #define FURTEX_STATIC_INIT(description) { FUTEX_STATIC_INIT(description), 0, 0, description, NULL, 0, FURTEX_STATS_STATIC_INIT }
 Py_LOCAL_INLINE(void) furtex_init(furtex_t *f) {
 	memset(f, 0, sizeof(*f));
+    futex_init(&f->futex);
 }
 #define furtex_lock(f) (_furtex_lock(f, __FILE__, __LINE__))
 Py_LOCAL_INLINE(void) _furtex_lock(furtex_t *f, const char *file, int line) {
