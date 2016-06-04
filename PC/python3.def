@@ -712,3 +712,6 @@ EXPORTS
   _PyArg_VaParse_SizeT=python36._PyArg_VaParse_SizeT
   _PyArg_VaParseTupleAndKeywords_SizeT=python36._PyArg_VaParseTupleAndKeywords_SizeT
   _Py_BuildValue_SizeT=python36._Py_BuildValue_SizeT
+  Py_AtomicInc=python36.Py_AtomicInc
+  Py_AtomicDec=python36.Py_AtomicDec
+  Py_AtomicAdd=python36.Py_AtomicAdd

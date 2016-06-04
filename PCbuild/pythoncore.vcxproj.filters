@@ -974,6 +974,9 @@
     <ClCompile Include="..\Objects\odictobject.c">
       <Filter>Objects</Filter>
     </ClCompile>
+    <ClCompile Include="..\Python\lock_win.c">
+      <Filter>Python</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\PC\python_nt.rc">

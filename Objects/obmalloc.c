@@ -1202,7 +1202,7 @@ _PyObject_Alloc(int use_calloc, void *ctx, size_t nelem, size_t elsize)
     uint size;
     uint class;
 
-    __sync_fetch_and_add(&_Py_AllocatedBlocks, 1);
+    ATOMIC_INC(&_Py_AllocatedBlocks);
 
     assert(nelem <= PY_SSIZE_T_MAX / elsize);
     nbytes = nelem * elsize;
@@ -1408,7 +1408,7 @@ redirect:
         else
             result = PyMem_RawMalloc(nbytes);
         if (!result)
-            __sync_sub_and_fetch(&_Py_AllocatedBlocks, 1);
+            ATOMIC_DEC(&_Py_AllocatedBlocks);
         return result;
     }
 }
@@ -1442,7 +1442,7 @@ _PyObject_Free(void *ctx, void *p)
     if (p == NULL)      /* free(NULL) has no effect */
         return;
 
-    __sync_sub_and_fetch(&_Py_AllocatedBlocks, 1);
+    ATOMIC_DEC(&_Py_AllocatedBlocks);
 
 #ifdef WITH_VALGRIND
     if (UNLIKELY(running_on_valgrind > 0))
