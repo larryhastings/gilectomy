@@ -833,7 +833,6 @@ Py_LOCAL_INLINE(int) __py_incref__(PyObject *o) {
     py_time_refcounts_t *t = PyState_GetThisThreadPyTimeRefcounts();
     _Py_INC_REFTOTAL;
     start = fast_get_cycles();
-    __sync_fetch_and_add(&_Py_REFCNT(o), 1);
     ATOMIC_INC(&_Py_REFCNT(o));
     delta = fast_get_cycles() - start;
     PY_TIME_FETCH_AND_ADD(t, total_refcount_time, delta);
