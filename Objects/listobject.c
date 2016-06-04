@@ -2534,6 +2534,7 @@ list_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     if (result == NULL) {
         return NULL;
     }
+    list_lock_new((PyListObject *)result);
     return result;
 }
 
