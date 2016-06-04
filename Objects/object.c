@@ -27,10 +27,10 @@ _Py_GetRefTotal(void)
        hash table code is well-tested) */
     o = _PyDict_Dummy();
     if (o != NULL)
-        total -= o->ob_refcnt;
+        total -= Py_REFCNT(o);
     o = _PySet_Dummy;
     if (o != NULL)
-        total -= o->ob_refcnt;
+        total -= Py_REFCNT(o);
     return total;
 }
 
@@ -215,7 +215,7 @@ _Py_NegativeRefcount(const char *fname, int lineno, PyObject *op)
     PyOS_snprintf(buf, sizeof(buf),
                   "%s:%i object at %p has negative ref count "
                   "%" PY_FORMAT_SIZE_T "d",
-                  fname, lineno, op, op->ob_refcnt);
+                  fname, lineno, op, Py_REFCNT(op));
     Py_FatalError(buf);
 }
 
@@ -302,27 +302,30 @@ PyObject_CallFinalizerFromDealloc(PyObject *self)
     Py_ssize_t refcnt;
 
     /* Temporarily resurrect the object. */
-    if (self->ob_refcnt != 0) {
+    if (Py_REFCNT(self) != 0) {
         Py_FatalError("PyObject_CallFinalizerFromDealloc called on "
                       "object with a non-zero refcount");
     }
-    self->ob_refcnt = 1;
+    Py_REFCNT_Initialize(self, 1);
 
     PyObject_CallFinalizer(self);
 
     /* Undo the temporary resurrection; can't use DECREF here, it would
      * cause a recursive call.
      */
-    assert(self->ob_refcnt > 0);
-    if (--self->ob_refcnt == 0)
+    assert(Py_REFCNT(self) > 0);
+    if (Py_REFCNT(self) == 1) {
+	Py_REFCNT_Initialize(self, 0);
         return 0;         /* this is the normal path out */
+    }
+    Py_DECREF(self);
 
     /* tp_finalize resurrected it!  Make it look like the original Py_DECREF
      * never happened.
      */
-    refcnt = self->ob_refcnt;
+    refcnt = Py_REFCNT(self);
     _Py_NewReference(self);
-    self->ob_refcnt = refcnt;
+    Py_REFCNT_Initialize(self, refcnt);
 
     if (PyType_IS_GC(Py_TYPE(self))) {
         assert(_PyGC_REFS(self) != _PyGC_REFS_UNTRACKED);
@@ -362,12 +365,12 @@ PyObject_Print(PyObject *op, FILE *fp, int flags)
         Py_END_ALLOW_THREADS
     }
     else {
-        if (op->ob_refcnt <= 0)
+        if (Py_REFCNT(op) <= 0)
             /* XXX(twouters) cast refcount to long until %zd is
                universally available */
             Py_BEGIN_ALLOW_THREADS
             fprintf(fp, "<refcnt %ld at %p>",
-                (long)op->ob_refcnt, op);
+                (long)Py_REFCNT(op), op);
             Py_END_ALLOW_THREADS
         else {
             PyObject *s;
@@ -449,7 +452,7 @@ _PyObject_Dump(PyObject* op)
             "refcount: %ld\n"
             "address : %p\n",
             Py_TYPE(op)==NULL ? "NULL" : Py_TYPE(op)->tp_name,
-            (long)op->ob_refcnt,
+            (long)Py_REFCNT(op),
             op);
     }
 }
@@ -939,7 +942,7 @@ PyObject_SetAttr(PyObject *v, PyObject *name, PyObject *value)
         return err;
     }
     Py_DECREF(name);
-    assert(name->ob_refcnt >= 1);
+    assert(PY_REFCNT(name) >= 1);
     if (tp->tp_getattr == NULL && tp->tp_getattro == NULL)
         PyErr_Format(PyExc_TypeError,
                      "'%.100s' object has no attributes "
@@ -1518,7 +1521,7 @@ PyTypeObject _PyNone_Type = {
 
 PyObject _Py_NoneStruct = {
   _PyObject_EXTRA_INIT
-  1, &_PyNone_Type
+  _PyObject_REFCNT_INIT(1), &_PyNone_Type
 };
 
 /* NotImplemented is an object that can be used to signal that an
@@ -1603,7 +1606,7 @@ PyTypeObject _PyNotImplemented_Type = {
 
 PyObject _Py_NotImplementedStruct = {
     _PyObject_EXTRA_INIT
-    1, &_PyNotImplemented_Type
+    _PyObject_REFCNT_INIT(1), &_PyNotImplemented_Type
 };
 
 void
@@ -1791,7 +1794,7 @@ void
 _Py_NewReference(PyObject *op)
 {
     _Py_INC_REFTOTAL;
-    op->ob_refcnt = 1;
+    Py_REFCNT_Initialize(op, 1);
     _Py_AddToAllObjects(op, 1);
     _Py_INC_TPALLOCS(op);
 }
@@ -1802,7 +1805,7 @@ _Py_ForgetReference(PyObject *op)
 #ifdef SLOW_UNREF_CHECK
     PyObject *p;
 #endif
-    if (op->ob_refcnt < 0)
+    if (Py_REFCNT(op) < 0)
         Py_FatalError("UNREF negative refcnt");
     if (op == &refchain ||
         op->_ob_prev->_ob_next != op || op->_ob_next->_ob_prev != op) {
@@ -1845,7 +1848,7 @@ _Py_PrintReferences(FILE *fp)
     PyObject *op;
     fprintf(fp, "Remaining objects:\n");
     for (op = refchain._ob_next; op != &refchain; op = op->_ob_next) {
-        fprintf(fp, "%p [%" PY_FORMAT_SIZE_T "d] ", op, op->ob_refcnt);
+        fprintf(fp, "%p [%" PY_FORMAT_SIZE_T "d] ", op, Py_REFCNT(op));
         if (PyObject_Print(op, fp, 0) != 0)
             PyErr_Clear();
         putc('\n', fp);
@@ -1862,7 +1865,7 @@ _Py_PrintReferenceAddresses(FILE *fp)
     fprintf(fp, "Remaining object addresses:\n");
     for (op = refchain._ob_next; op != &refchain; op = op->_ob_next)
         fprintf(fp, "%p [%" PY_FORMAT_SIZE_T "d] %s\n", op,
-            op->ob_refcnt, Py_TYPE(op)->tp_name);
+            Py_REFCNT(op), Py_TYPE(op)->tp_name);
 }
 
 PyObject *
@@ -2007,7 +2010,7 @@ _PyTrash_deposit_object(PyObject *op)
 {
     assert(PyObject_IS_GC(op));
     assert(_PyGC_REFS(op) == _PyGC_REFS_UNTRACKED);
-    assert(op->ob_refcnt == 0);
+    assert(Py_REFCNT(op) == 0);
     _Py_AS_GC(op)->gc.gc_prev = (PyGC_Head *)_PyTrash_delete_later;
     _PyTrash_delete_later = op;
 }
@@ -2019,7 +2022,7 @@ _PyTrash_thread_deposit_object(PyObject *op)
     PyThreadState *tstate = PyThreadState_GET();
     assert(PyObject_IS_GC(op));
     assert(_PyGC_REFS(op) == _PyGC_REFS_UNTRACKED);
-    assert(op->ob_refcnt == 0);
+    assert(Py_REFCNT(op) == 0);
     _Py_AS_GC(op)->gc.gc_prev = (PyGC_Head *) tstate->trash_delete_later;
     tstate->trash_delete_later = op;
 }
@@ -2043,7 +2046,7 @@ _PyTrash_destroy_chain(void)
          * assorted non-release builds calling Py_DECREF again ends
          * up distorting allocation statistics.
          */
-        assert(op->ob_refcnt == 0);
+        assert(Py_REFCNT(op) == 0);
         ++_PyTrash_delete_nesting;
         (*dealloc)(op);
         --_PyTrash_delete_nesting;
@@ -2068,7 +2071,7 @@ _PyTrash_thread_destroy_chain(void)
          * assorted non-release builds calling Py_DECREF again ends
          * up distorting allocation statistics.
          */
-        assert(op->ob_refcnt == 0);
+        assert(Py_REFCNT(op) == 0);
         ++tstate->trash_delete_nesting;
         (*dealloc)(op);
         --tstate->trash_delete_nesting;

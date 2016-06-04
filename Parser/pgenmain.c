@@ -26,6 +26,9 @@ int Py_DebugFlag;
 int Py_VerboseFlag;
 int Py_IgnoreEnvironmentFlag;
 
+/* We don't have an interpreter or threads here */
+py_time_refcounts_t* PyState_GetThisThreadPyTimeRefcounts(void) { return 0; }
+
 /* Forward */
 grammar *getgrammar(const char *filename);
 

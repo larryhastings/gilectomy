@@ -3450,7 +3450,7 @@ static PyObject *dictiter_iternextitem(dictiterobject *di)
     if (i > mask)
         goto fail;
 
-    if (result->ob_refcnt == 1) {
+    if (Py_REFCNT(result) == 1) {
         Py_INCREF(result);
         Py_DECREF(PyTuple_GET_ITEM(result, 0));
         Py_DECREF(PyTuple_GET_ITEM(result, 1));
@@ -4240,6 +4240,6 @@ static PyTypeObject PyDictDummy_Type = {
 
 static PyObject _dummy_struct = {
   _PyObject_EXTRA_INIT
-  2, &PyDictDummy_Type
+  _PyObject_REFCNT_INIT(2), &PyDictDummy_Type
 };
 

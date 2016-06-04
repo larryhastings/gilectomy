@@ -541,7 +541,7 @@ functools_reduce(PyObject *self, PyObject *args)
     for (;;) {
         PyObject *op2;
 
-        if (args->ob_refcnt > 1) {
+        if (Py_REFCNT(args) > 1) {
             Py_DECREF(args);
             if ((args = PyTuple_New(2)) == NULL)
                 goto Fail;

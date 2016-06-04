@@ -11,8 +11,6 @@
 //  void futex_lock_primitive(primitivelock_t *f) - locks a futex
 //  void futex_unlock_primitive(primitivelock_t *f) - unlocks a futex
 //  FUTEX_STATIC_INIT(description) - statically initalizes a futex with a description
-
-
 /*
 ** futex
 **
@@ -22,18 +20,15 @@
 ** middle of object.h.  We can find a better place for it later.
 */
 
-
 #if defined(FUTEX_WANT_STATS) || defined(FURTEX_WANT_STATS)
 #define PyMAX(a, b) ((a)>(b)?(a):(b))
 #define PyMIN(a, b) ((a)<(b)?(a):(b))
 #endif /* FUTEX_WANT_STATS || FURTEX_WANT_STATS */
-
 #ifdef FUTEX_WANT_STATS
 #define FUTEX_STATS_STATIC_INIT , 0, 0, 0, 0
 #else
 #define FUTEX_STATS_STATIC_INIT
 #endif
-
 #if defined(WIN32) || defined(WIN64)
 #include "lock_win.h"
 #elif defined(__APPLE__)
@@ -43,21 +38,18 @@
 #endif
 
 #ifndef PY_TIME_FETCH_AND_ADD
-
 #define PY_TIME_FETCH_AND_ADD(t, fieldname, delta) \
     if (t) { t->fieldname += delta; } else {        \
     __sync_fetch_and_add(&(py_time_refcounts.fieldname), delta); \
     }
-
 #endif
 
 #if 0 /* ACTIVATE STATS */
-/* Factor of two speed cost for PY_TIME_REFCOUNTS currently */
-#define PY_TIME_REFCOUNTS
-#define FUTEX_WANT_STATS
-#define FURTEX_WANT_STATS
-#define GC_TRACK_STATS
-
+    /* Factor of two speed cost for PY_TIME_REFCOUNTS currently */
+    #define PY_TIME_REFCOUNTS
+    #define FUTEX_WANT_STATS
+    #define FURTEX_WANT_STATS
+    #define GC_TRACK_STATS
 #endif /* ACTIVATE STATS */
 
 typedef struct {
@@ -67,38 +59,14 @@ typedef struct {
 
 extern py_time_refcounts_t py_time_refcounts;
 
-Py_LOCAL_INLINE(void) py_time_refcounts_setzero(py_time_refcounts_t *t) {
-#ifdef PY_TIME_REFCOUNTS
-	t->total_refcount_time = 0;
-	t->total_refcounts = 0;
-#endif /* PY_TIME_REFCOUNTS */
-}
+void py_time_refcounts_setzero(py_time_refcounts_t *t);
 
-Py_LOCAL_INLINE(void) py_time_refcounts_persist(py_time_refcounts_t *t) {
-#ifdef PY_TIME_REFCOUNTS
-	py_time_refcounts_t* const zero = 0;
-	PY_TIME_FETCH_AND_ADD(zero, total_refcount_time, t->total_refcount_time);
-	PY_TIME_FETCH_AND_ADD(zero, total_refcounts, t->total_refcounts);
-	py_time_refcounts_setzero(t);
-#endif /* PY_TIME_REFCOUNTS */
-}
-
-Py_LOCAL_INLINE(void) py_time_refcounts_stats(void) {
-#ifdef PY_TIME_REFCOUNTS
-	if (py_time_refcounts.total_refcounts) {
-		printf("[py_incr/py_decr] %lu total calls\n", (unsigned long)py_time_refcounts.total_refcounts);
-		printf("[py_incr/py_decr] %lu total time spent, in cycles\n", (unsigned long)py_time_refcounts.total_refcount_time);
-		printf("[py_incr/py_decr] %f total time spent, in seconds\n", seconds_from_cycles(py_time_refcounts.total_refcount_time));
-		printf("[py_incr/py_decr] %f average cycles for a py_incr/py_decr\n", ((double)py_time_refcounts.total_refcount_time) / py_time_refcounts.total_refcounts);
-	}
-#endif /* PY_TIME_REFCOUNTS */
-}
+void py_time_refcounts_persist(py_time_refcounts_t *t);
 
 #define CYCLES_PER_SEC 2600000000
 #define F_CYCLES_PER_SEC ((double)CYCLES_PER_SEC)
 
-Py_LOCAL_INLINE(uint64_t) fast_get_cycles(void)
-{
+Py_LOCAL_INLINE(uint64_t) fast_get_cycles(void) {
 #ifdef __APPLE__
 	return mach_absolute_time();
 #else
@@ -137,13 +105,11 @@ Py_LOCAL_INLINE(void) futex_lock(futex_t *f) {
 #endif /* FUTEX_WANT_STATS */
 	return;
 }
-
 Py_LOCAL_INLINE(void) futex_unlock(futex_t *f) {
 	futex_unlock_primitive(&f->futex);
 }
 
 // Next the common locking functionality builds on top of those core locking primitives
-
 Py_LOCAL_INLINE(void) futex_reset_stats(futex_t *f) {
 #ifdef FUTEX_WANT_STATS
 	f->no_contention_count =
@@ -152,12 +118,10 @@ Py_LOCAL_INLINE(void) futex_reset_stats(futex_t *f) {
 		f->contention_count = 0;
 #endif /* FUTEX_WANT_STATS */
 }
-
 Py_LOCAL_INLINE(float) seconds_from_cycles(uint64_t cycles) {
 #ifdef __APPLE__
 	static double to_nano = -1;
 	mach_timebase_info_data_t sTimebaseInfo;
-
 	if (to_nano < 0) {
 		mach_timebase_info(&sTimebaseInfo);
 		to_nano = (float)sTimebaseInfo.numer / (float)sTimebaseInfo.denom;
@@ -168,24 +132,6 @@ Py_LOCAL_INLINE(float) seconds_from_cycles(uint64_t cycles) {
 #endif
 }
 
-Py_LOCAL_INLINE(void) futex_stats(futex_t *f) {
-#ifdef FUTEX_WANT_STATS
-	printf("[%s] %ld total locks\n", f->description, (long)(f->no_contention_count + f->contention_count));
-	printf("[%s] %ld locks without contention\n", f->description, (long)f->no_contention_count);
-	printf("[%s] %ld locks with contention\n", f->description, (long)f->contention_count);
-	if (f->contention_count) {
-		printf("[%s] %ld contention total delay in cycles\n", f->description, (long)f->contention_total_delay);
-		printf("[%s] %f contention total delay in cpu-seconds\n", f->description, seconds_from_cycles(f->contention_total_delay));
-		printf("[%s] %f contention average delay in cycles\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
-		printf("[%s] %ld contention max delay in cycles\n", f->description, (long)f->contention_max_delta);
-	}
-	futex_reset_stats(f);
-	/*
-	#else
-	printf("[futex stats disabled at compile-time]\n");
-	*/
-#endif /* FUTEX_WANT_STATS */
-}
 
 /*
 ** furtex
@@ -193,7 +139,6 @@ Py_LOCAL_INLINE(void) futex_stats(futex_t *f) {
 ** recursive futex lock
 **
 */
-
 typedef struct {
 	futex_t futex;
 	int count;
@@ -211,15 +156,11 @@ typedef struct {
 #define FURTEX_STATS_STATIC_INIT
 #endif /* FURTEX_WANT_STATS */
 } furtex_t;
-
 #define FURTEX_STATIC_INIT(description) { FUTEX_STATIC_INIT(description), 0, 0, description, NULL, 0, FURTEX_STATS_STATIC_INIT }
-
 Py_LOCAL_INLINE(void) furtex_init(furtex_t *f) {
 	memset(f, 0, sizeof(*f));
 }
-
 #define furtex_lock(f) (_furtex_lock(f, __FILE__, __LINE__))
-
 Py_LOCAL_INLINE(void) _furtex_lock(furtex_t *f, const char *file, int line) {
 	threadid_t tid = CURTHREAD_ID();
 #ifdef FURTEX_WANT_STATS
@@ -251,7 +192,6 @@ Py_LOCAL_INLINE(void) _furtex_lock(furtex_t *f, const char *file, int line) {
 	assert(f->count == 0);
 	f->count = 1;
 }
-
 Py_LOCAL_INLINE(void) furtex_unlock(furtex_t *f) {
 	/* this function assumes we own the lock! */
 	assert(f->count > 0);
@@ -259,7 +199,6 @@ Py_LOCAL_INLINE(void) furtex_unlock(furtex_t *f) {
 		return;
 	futex_unlock(&(f->futex));
 }
-
 Py_LOCAL_INLINE(void) furtex_reset_stats(furtex_t *f) {
 #ifdef FURTEX_WANT_STATS
 	f->no_contention_count =
@@ -269,22 +208,6 @@ Py_LOCAL_INLINE(void) furtex_reset_stats(furtex_t *f) {
 #endif /* FURTEX_WANT_STATS */
 }
 
-Py_LOCAL_INLINE(void) furtex_stats(furtex_t *f) {
-#ifdef FURTEX_WANT_STATS
-	printf("[%s] %ld total locks\n", f->description, f->no_contention_count + f->contention_count);
-	printf("[%s] %ld locks without contention\n", f->description, f->no_contention_count);
-	printf("[%s] %ld locks with contention\n", f->description, f->contention_count);
-	if (f->contention_count) {
-		printf("[%s] %ld contention total delay in cycles\n", f->description, f->contention_total_delay);
-		printf("[%s] %f contention total delay in cpu-seconds\n", f->description, f->contention_total_delay / 2600000000.0);
-		printf("[%s] %f contention average delay in cycles\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
-		printf("[%s] %ld contention max delay in cycles\n", f->description, f->contention_max_delta);
-	}
-	furtex_reset_stats(f);
-	/*
-	#else
-	printf("[furtex stats disabled at compile-time]\n");
-	*/
-#endif /* FURTEX_WANT_STATS */
-}
+void furtex_stats(furtex_t *f);
+void futex_stats(futex_t *f);
 

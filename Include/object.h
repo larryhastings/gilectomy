@@ -4,6 +4,11 @@
 extern "C" {
 #endif
 
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <pyport.h>
 
 /* Object and type object interface */
 
@@ -53,67 +58,38 @@ whose size is determined when the object is allocated.
 
 /* Py_DEBUG implies Py_TRACE_REFS. */
 #if defined(Py_DEBUG) && !defined(Py_TRACE_REFS)
-#define Py_TRACE_REFS
+    #define Py_TRACE_REFS
 #endif
 
 /* Py_TRACE_REFS implies Py_REF_DEBUG. */
 #if defined(Py_TRACE_REFS) && !defined(Py_REF_DEBUG)
-#define Py_REF_DEBUG
+    #define Py_REF_DEBUG
 #endif
 
 #if defined(Py_LIMITED_API) && defined(Py_REF_DEBUG)
-#error Py_LIMITED_API is incompatible with Py_DEBUG, Py_TRACE_REFS, and Py_REF_DEBUG
+    #error Py_LIMITED_API is incompatible with Py_DEBUG, Py_TRACE_REFS, and Py_REF_DEBUG
 #endif
 
 
 #ifdef Py_TRACE_REFS
 /* Define pointers to support a doubly-linked list of all live heap objects. */
-#define _PyObject_HEAD_EXTRA            \
-    struct _object *_ob_next;           \
-    struct _object *_ob_prev;
-
-#define _PyObject_EXTRA_INIT 0, 0,
-
+    #define _PyObject_HEAD_EXTRA            \
+        struct _object *_ob_next;           \
+        struct _object *_ob_prev;
+    #define _PyObject_EXTRA_INIT 0, 0,
 #else
-#define _PyObject_HEAD_EXTRA
-#define _PyObject_EXTRA_INIT
+    #define _PyObject_HEAD_EXTRA
+    #define _PyObject_EXTRA_INIT
 #endif
 
 /* PyObject_HEAD defines the initial segment of every PyObject. */
 #define PyObject_HEAD                   PyObject ob_base;
 
-#if 0 /* ACTIVATE STATS */
-    /* Factor of two speed cost for PY_TIME_REFCOUNTS currently */
-    #define PY_TIME_REFCOUNTS
-    #define FUTEX_WANT_STATS
-    #define FURTEX_WANT_STATS
-    #define GC_TRACK_STATS
-#endif /* ACTIVATE STATS */
-
-#define CYCLES_PER_SEC 2600000000
-#define F_CYCLES_PER_SEC ((double)CYCLES_PER_SEC)
-
-#if defined(FUTEX_WANT_STATS) || defined(FURTEX_WANT_STATS)
-#define PyMAX(a, b) ((a)>(b)?(a):(b))
-#define PyMIN(a, b) ((a)<(b)?(a):(b))
-#endif /* FUTEX_WANT_STATS || FURTEX_WANT_STATS */
-
-#include <errno.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <pyport.h>
-#include <inttypes.h>
-
-/*
-**
-** Yes, this futex / furtex stuff shouldn't just be plopped in the
-** middle of object.h.We can find a better place for it later.
- */
-#include "lock.h"
+#define _PyObject_REFCNT_INIT(value) { value }
 
 #define PyObject_HEAD_INIT(type)        \
     { _PyObject_EXTRA_INIT              \
-    1, type },
+    _PyObject_REFCNT_INIT(1), type },
 
 #define PyVarObject_HEAD_INIT(type, size)       \
     { PyObject_HEAD_INIT(type) size },
@@ -127,6 +103,14 @@ whose size is determined when the object is allocated.
 #define PyObject_VAR_HEAD      PyVarObject ob_base;
 #define Py_INVALID_SIZE (Py_ssize_t)-1
 
+typedef struct {
+    Py_ssize_t shared_refcnt;
+} ob_refcnt_t;
+
+/********************* Locking and RefCnt *************************************/
+/* Locking is in separate files */
+#include "lock.h"
+
 /* Nothing is actually declared to be a PyObject, but every pointer to
  * a Python object can be cast to a PyObject*.  This is inheritance built
  * by hand.  Similarly every pointer to a variable-size Python object can,
@@ -134,7 +118,7 @@ whose size is determined when the object is allocated.
  */
 typedef struct _object {
     _PyObject_HEAD_EXTRA
-    Py_ssize_t ob_refcnt;
+    ob_refcnt_t ob_refcnt;
     struct _typeobject *ob_type;
 } PyObject;
 
@@ -143,7 +127,15 @@ typedef struct {
     Py_ssize_t ob_size; /* Number of items in variable part */
 } PyVarObject;
 
-#define Py_REFCNT(ob)           (((PyObject*)(ob))->ob_refcnt)
+Py_LOCAL_INLINE(void) Py_REFCNT_Initialize(PyObject* ob, int value) {
+    ob->ob_refcnt.shared_refcnt = value;
+}
+
+Py_LOCAL_INLINE(Py_ssize_t) Py_REFCNT(PyObject* ob) {
+    /* Warning - this may be slow in future */
+    return ob->ob_refcnt.shared_refcnt;
+}
+
 #define Py_TYPE(ob)             (((PyObject*)(ob))->ob_type)
 #define Py_SIZE(ob)             (((PyVarObject*)(ob))->ob_size)
 
@@ -747,7 +739,7 @@ PyAPI_FUNC(Py_ssize_t) _Py_GetRefTotal(void);
 #define _Py_DEC_REFTOTAL        _Py_RefTotal--
 #define _Py_REF_DEBUG_COMMA     ,
 #define _Py_CHECK_REFCNT(OP)                                    \
-{       if (((PyObject*)OP)->ob_refcnt < 0)                             \
+{       if (Py_REFCNT(OP) < 0)                                  \
                 _Py_NegativeRefcount(__FILE__, __LINE__,        \
                                      (PyObject *)(OP));         \
 }
@@ -794,7 +786,7 @@ PyAPI_FUNC(void) _Py_AddToAllObjects(PyObject *, int force);
 #define _Py_NewReference(op) (                          \
     _Py_INC_TPALLOCS(op) _Py_COUNT_ALLOCS_COMMA         \
     _Py_INC_REFTOTAL  _Py_REF_DEBUG_COMMA               \
-    Py_REFCNT(op) = 1)
+    Py_REFCNT_Initialize(op, 1))
 
 #define _Py_ForgetReference(op) _Py_INC_TPFREES(op)
 
@@ -809,32 +801,8 @@ PyAPI_FUNC(void) _Py_Dealloc(PyObject *);
 
 #ifdef PY_TIME_REFCOUNTS
 
-Py_LOCAL_INLINE(int) __py_incref__(PyObject *o) {
-    uint64_t start, delta;
-    py_time_refcounts_t *t = PyState_GetThisThreadPyTimeRefcounts();
-    _Py_INC_REFTOTAL;
-    start = fast_get_cycles();
-    ATOMIC_INC(&o->ob_refcnt);
-    delta = fast_get_cycles() - start;
-    PY_TIME_FETCH_AND_ADD(t, total_refcount_time, delta);
-    PY_TIME_FETCH_AND_ADD(t, total_refcounts, 1);
-    return 1;
-}
-
-Py_LOCAL_INLINE(void) __py_decref__(PyObject *o) {
-    uint64_t start, delta, new_rc;
-    py_time_refcounts_t *t = PyState_GetThisThreadPyTimeRefcounts();
-    _Py_DEC_REFTOTAL;
-    start = fast_get_cycles();
-    new_rc = ATOMIC_DEC(&(o->ob_refcnt), 1);
-    delta = fast_get_cycles() - start;
-    PY_TIME_FETCH_AND_ADD(t, total_refcount_time, delta);
-    PY_TIME_FETCH_AND_ADD(t, total_refcounts, 1);
-    if (new_rc != 0)
-        _Py_CHECK_REFCNT(o)
-    else
-        _Py_Dealloc(o);
-}
+int __py_incref__(PyObject *o);
+void __py_decref__(PyObject *o);
 
 #define Py_INCREF(op)                                   \
     (__py_incref__((PyObject *)(op)))
@@ -846,20 +814,19 @@ Py_LOCAL_INLINE(void) __py_decref__(PyObject *o) {
 
 #define Py_INCREF(op) (                         \
     _Py_INC_REFTOTAL  _Py_REF_DEBUG_COMMA       \
-    ATOMIC_INC(&(((PyObject *)(op))->ob_refcnt)) )
+    ATOMIC_INC(&(((PyObject *)(op))->ob_refcnt.shared_refcnt)) )
 
 #define Py_DECREF(op)                                   \
     do {                                                \
         PyObject *_py_decref_tmp = (PyObject *)(op);    \
         if (_Py_DEC_REFTOTAL  _Py_REF_DEBUG_COMMA       \
-        ATOMIC_DEC(&(_py_decref_tmp->ob_refcnt)) != 0)  \
+        ATOMIC_DEC(&(_py_decref_tmp->ob_refcnt.shared_refcnt)) != 0)  \
             _Py_CHECK_REFCNT(_py_decref_tmp)            \
         else                                            \
             _Py_Dealloc(_py_decref_tmp);                \
     } while (0)
 
 #endif /* PY_TIME_REFCOUNTS */
-
 
 /* Safely decref `op` and set `op` to NULL, especially useful in tp_clear
  * and tp_dealloc implementations.
