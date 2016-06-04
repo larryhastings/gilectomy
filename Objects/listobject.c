@@ -2527,6 +2527,16 @@ list_richcompare(PyObject *v, PyObject *w, int op)
     return result;
 }
 
+static PyObject *
+list_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    PyObject *result = PyType_GenericNew(type, args, kwds);
+    if (result == NULL) {
+        return NULL;
+    }
+    return result;
+}
+
 static int
 list_init(PyListObject *self, PyObject *args, PyObject *kw)
 {
@@ -2938,7 +2948,7 @@ PyTypeObject PyList_Type = {
     0,                                          /* tp_dictoffset */
     (initproc)list_init,                        /* tp_init */
     PyType_GenericAlloc,                        /* tp_alloc */
-    PyType_GenericNew,                          /* tp_new */
+    list_new,                                   /* tp_new */
     PyObject_GC_Del,                            /* tp_free */
 
 
