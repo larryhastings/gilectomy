@@ -3,9 +3,12 @@
 #include "Python.h"
 #include "structmember.h"
 
-static furtex_t module_furtex = FURTEX_STATIC_INIT("class module lock");
-#define module_lock() furtex_lock(&module_furtex)
-#define module_unlock() furtex_unlock(&module_furtex)
+static py_recursivelock_t module_rlock = PY_RECURSIVELOCK_STATIC_INIT("class module lock");
+#define module_lock() py_recursivelock_lock(&module_rlock)
+#define module_unlock() py_recursivelock_unlock(&module_rlock)
+void classobject_lock_stats(void) {
+    py_recursivelock_stats(&module_rlock);
+}
 
 #define TP_DESCR_GET(t) ((t)->tp_descr_get)
 

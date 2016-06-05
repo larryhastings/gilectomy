@@ -631,49 +631,49 @@ static int running_on_valgrind = -1;
 
 
 #ifdef OBMALLOC_LOCK_PER_SIZE_CLASS
-futex_t _arena_lock = FUTEX_STATIC_INIT("arena lock");
-#define arena_lock()    (futex_lock  (&_arena_lock))
-#define arena_unlock()  (futex_unlock(&_arena_lock))
+py_lock_t _arena_lock = PY_LOCK_STATIC_INIT("arena lock");
+#define arena_lock()    (py_lock_lock  (&_arena_lock))
+#define arena_unlock()  (py_lock_unlock(&_arena_lock))
 
-futex_t _pool_locks[NB_SMALL_SIZE_CLASSES];
-#define LOCK(class)     (futex_lock  (_pool_locks + class))
-#define UNLOCK(class)   (futex_unlock(_pool_locks + class))
+py_lock_t _pool_locks[NB_SMALL_SIZE_CLASSES];
+#define LOCK(class)     (py_lock_lock  (_pool_locks + class))
+#define UNLOCK(class)   (py_lock_unlock(_pool_locks + class))
 
 void obmalloc_lock_stats(void) {
-    futex_t stats;
+    py_lock_t stats;
     memset(&stats, 0, sizeof(stats));
     stats.description = "obmalloc cumulative pool locks";
-#ifdef FUTEX_WANT_STATS
+#ifdef PY_LOCK_WANT_STATS
     {
     int i;
 
     for (i = 0; i < NB_SMALL_SIZE_CLASSES; i++) {
-        futex_t *p = _pool_locks + i;
-        #define ACCUMULATE_FUTEX_STAT(field) stats.field += p->field;
-        ACCUMULATE_FUTEX_STAT(no_contention_count);
-        ACCUMULATE_FUTEX_STAT(contention_count);
-        ACCUMULATE_FUTEX_STAT(contention_total_delay);
-        ACCUMULATE_FUTEX_STAT(contention_max_delta);
+        py_lock_t *p = _pool_locks + i;
+        #define ACCUMULATE_LOCK_STAT(field) stats.field += p->field;
+        ACCUMULATE_LOCK_STAT(no_contention_count);
+        ACCUMULATE_LOCK_STAT(contention_count);
+        ACCUMULATE_LOCK_STAT(contention_total_delay);
+        ACCUMULATE_LOCK_STAT(contention_max_delta);
     }
 
     }
 #endif
-    futex_stats(&stats);
-    futex_stats(&_arena_lock);
+    py_lock_stats(&stats);
+    py_lock_stats(&_arena_lock);
 }
 
 #else /* OBMALLOC_LOCK_PER_SIZE_CLASS */
-futex_t _obmalloc_lock = FUTEX_STATIC_INIT("obmalloc (single lock)");
+py_lock_t _obmalloc_lock = PY_LOCK_STATIC_INIT("obmalloc (single lock)");
 
-#define LOCK(class)     (futex_lock  (&_obmalloc_lock))
-#define UNLOCK(class)   (futex_unlock(&_obmalloc_lock))
+#define LOCK(class)     (py_lock_lock  (&_obmalloc_lock))
+#define UNLOCK(class)   (py_lock_unlock(&_obmalloc_lock))
 
 #define arena_lock()
 #define arena_unlock()
 
 
 void obmalloc_lock_stats(void) {
-    futex_stats(&_obmalloc_lock);
+    py_lock_stats(&_obmalloc_lock);
 }
 
 #endif /* OBMALLOC_LOCK_PER_SIZE_CLASS */

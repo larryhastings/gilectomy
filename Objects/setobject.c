@@ -804,7 +804,7 @@ frozenset_hash(PyObject *self)
 
 Py_LOCAL_INLINE(void) set_lock_new(PySetObject *d)
 {
-    furtex_init(&d->lock);
+    py_recursivelock_init(&d->lock, "set()");
 }
 
 Py_LOCAL_INLINE(void) set_lock_dealloc(PySetObject *d)
@@ -813,12 +813,12 @@ Py_LOCAL_INLINE(void) set_lock_dealloc(PySetObject *d)
 
 Py_LOCAL_INLINE(void) set_lock(PySetObject *d)
 {
-    furtex_lock(&(d->lock));
+    py_recursivelock_lock(&(d->lock));
 }
 
 Py_LOCAL_INLINE(void) set_unlock(PySetObject *d)
 {
-    furtex_unlock(&(d->lock));
+    py_recursivelock_unlock(&(d->lock));
 }
 
 /***** Set iterator type ***********************************************/

@@ -3,46 +3,34 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
-void futex_init_primitive(primitivelock_t *lock) {
-	InitializeSRWLock((PSRWLOCK)lock);
+#oid py_nativelock_init(py_nativelock_t *nativelock) {
+	InitializeSRWLock((PSRWLOCK)nativelock);
 }
 
-void futex_lock_primitive(primitivelock_t *lock) {
-	AcquireSRWLockExclusive((PSRWLOCK)lock);
+void py_nativelock_lock(py_nativelock_t *nativelock) {
+	AcquireSRWLockExclusive((PSRWLOCK)nativelock);
 }
 
-void futex_unlock_primitive(primitivelock_t *lock) {
-	ReleaseSRWLockExclusive((PSRWLOCK)lock);
+void py_nativelock_unlock(cheaplock_t *nativelock) {
+	ReleaseSRWLockExclusive((PSRWLOCK)nativelock);
 }
 
 unsigned long win32_threadid() {
 	return GetCurrentThreadId();
 }
 
-Py_ssize_t Py_AtomicInc(Py_ssize_t* value) {
+Py_ssize_t Py_AtomicAddSSize_t(Py_ssize_t *to, Py_ssize_t value) {
 #if WIN64
-	return InterlockedIncrement64(value);
+	return (Py_ssize_t)InterlockedAdd64((LONGLONG *)to, (LONGLONG)value);
 #else
-	return InterlockedIncrement(value);
+	return (Py_ssize_t)InterlockedAdd((LONG *)to, (LONG)value);
 #endif
 }
 
-Py_ssize_t Py_AtomicDec(Py_ssize_t* value) {
+Py_ssize_t Py_AtomicSubSSize_t(Py_ssize_t *to, Py_ssize_t value) {
 #if WIN64
-	return InterlockedDecrement64(value);
+	return (Py_ssize_t)InterlockedAdd64((LONGLONG *)to, -(LONGLONG)value);
 #else
-	return InterlockedDecrement(value);
+	return (Py_ssize_t)InterlockedAdd((LONG *)to, -(LONG)value);
 #endif
-}
-
-Py_ssize_t Py_AtomicAdd(Py_ssize_t* to, Py_ssize_t value) {
-#if WIN64
-	return InterlockedAdd64(to, value);
-#else
-	return InterlockedAdd(to, value);
-#endif
-}
-
-uint64_t _Py_AtomicAdd64(uint64_t* to, uint64_t value) {
-	return InterlockedAdd64(to, value);
 }

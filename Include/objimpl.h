@@ -256,7 +256,7 @@ typedef union _gc_head {
 #define gc_lock() (_gc_lock(__FILE__, __LINE__))
 PyAPI_FUNC(void) _gc_lock(const char *file, int line);
 #define gc_lock2(f) (_gc_lock2((f), __FILE__, __LINE__))
-PyAPI_FUNC(void) _gc_lock2(furtex_t *, const char *file, int line);
+PyAPI_FUNC(void) _gc_lock2(py_recursivelock_t *, const char *file, int line);
 PyAPI_FUNC(void) gc_unlock(void);
 extern PyGC_Head *_PyGC_generation0;
 

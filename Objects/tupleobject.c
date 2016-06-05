@@ -12,11 +12,11 @@
 #define PyTuple_MAXFREELIST  2000  /* Maximum number of tuples of each size to save */
 #endif
 
-static furtex_t module_furtex = FURTEX_STATIC_INIT("tuple module lock");
-#define module_lock() furtex_lock(&module_furtex)
-#define module_unlock() furtex_unlock(&module_furtex)
+static py_recursivelock_t module_rlock = PY_RECURSIVELOCK_STATIC_INIT("tuple module lock");
+#define module_lock() py_recursivelock_lock(&module_rlock)
+#define module_unlock() py_recursivelock_unlock(&module_rlock)
 void tupleobject_lock_stats(void) {
-    furtex_stats(&module_furtex);
+    py_recursivelock_stats(&module_rlock);
 }
 
 #if PyTuple_MAXSAVESIZE > 0

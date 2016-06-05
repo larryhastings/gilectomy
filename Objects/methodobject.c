@@ -4,9 +4,12 @@
 #include "Python.h"
 #include "structmember.h"
 
-static furtex_t module_furtex = FURTEX_STATIC_INIT("methodobject");
-#define module_lock() furtex_lock(&module_furtex)
-#define module_unlock() furtex_unlock(&module_furtex)
+static py_recursivelock_t module_rlock = PY_RECURSIVELOCK_STATIC_INIT("methodobject module lock");
+#define module_lock() py_recursivelock_lock(&module_rlock)
+#define module_unlock() py_recursivelock_unlock(&module_rlock)
+void methodobject_lock_stats(void) {
+    py_recursivelock_stats(&module_rlock);
+}
 
 /* Free list for method objects to safe malloc/free overhead
  * The m_self element is used to chain the objects.

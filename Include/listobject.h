@@ -37,7 +37,7 @@ typedef struct {
      * the list is not yet visible outside the function that builds it.
      */
     Py_ssize_t allocated;
-    furtex_t lock;
+    py_recursivelock_t lock;
 } PyListObject;
 #endif
 

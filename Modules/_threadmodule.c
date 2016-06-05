@@ -17,9 +17,12 @@ static PyObject *ThreadError;
 static long nb_threads = 0;
 static PyObject *str_dict;
 
-static furtex_t module_furtex = FURTEX_STATIC_INIT("_threadmodule lock");
-#define module_lock() furtex_lock(&module_furtex)
-#define module_unlock() furtex_unlock(&module_furtex)
+static py_recursivelock_t module_rlock = PY_RECURSIVELOCK_STATIC_INIT("_threadmodule lock");
+#define module_lock() py_recursivelock_lock(&module_rlock)
+#define module_unlock() py_recursivelock_unlock(&module_rlock)
+void threadmodule_lock_stats(void) {
+    py_recursivelock_stats(&module_rlock);
+}
 
 _Py_IDENTIFIER(stderr);
 

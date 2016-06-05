@@ -1,25 +1,27 @@
+#ifndef Py_LOCK_WIN_H
+#define Py_LOCK_WIN_H
+
 #include <Python.h>
 #include <intrin.h>
 
-typedef void* primitivelock_t;
+
 typedef unsigned long threadid_t;
-#define CURTHREAD_ID win32_threadid
-#define THREAD_EQUAL(x, y) (x == y)
+#define CURRENT_THREAD_ID win32_threadid
+#define ARE_THREADS_EQUAL(x, y) (pthread_equal((x), (y)))
+#define ATOMIC_PRE_ADD_SSIZE_T(x, y)  Py_AtomicAddSSize_t((x), (y))
+#define ATOMIC_PRE_SUB_SSIZE_T(x, y)  Py_AtomicSubSSize_t((x), (y))
 
-#define ATOMIC_INC Py_AtomicInc
-#define ATOMIC_DEC Py_AtomicDec
-#define ATOMIC_ADD Py_AtomicAdd
+PyAPI_FUNC(Py_ssize_t) Py_AtomicAddSSize_t(Py_ssize_t *to, Py_ssize_t value);
+PyAPI_FUNC(Py_ssize_t) Py_AtomicSubSSize_t(Py_ssize_t *to, Py_ssize_t value);
 
-uint64_t _Py_AtomicAdd64(uint64_t * to, uint64_t value);
+/* we just cast to SRWLOCK */
+#define PY_NATIVELOCK_T void *
 
-#define PY_TIME_FETCH_AND_ADD(t, fieldname, delta) \
-    if (t) { t->fieldname += delta; } else {        \
-    _Py_AtomicAdd64(&(py_time_refcounts.fieldname), delta); \
-    }
+// SRWLOCK_INIT would be correct, but we don't want
+// to include windows.h here for some reason
+// #define PY_NATIVELOCK_STATIC_INIT() {SRWLOCK_INIT}
+#define PY_NATIVELOCK_STATIC_INIT() {0}
 
-#define FUTEX_STATIC_INIT(description) { {0}, description FUTEX_STATS_STATIC_INIT }
-
-void futex_init_primitive(primitivelock_t *lock);
-void futex_lock_primitive(primitivelock_t *lock);
-void futex_unlock_primitive(primitivelock_t *lock);
 unsigned long win32_threadid();
+
+#endif /* Py_LOCK_WIN_H */

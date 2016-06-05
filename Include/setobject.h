@@ -62,7 +62,7 @@ typedef struct {
 
     setentry smalltable[PySet_MINSIZE];
     PyObject *weakreflist;      /* List of weak references */
-    furtex_t lock;
+    py_recursivelock_t lock;
 } PySetObject;
 
 #define PySet_GET_SIZE(so) (((PySetObject *)(so))->used)

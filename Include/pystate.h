@@ -284,6 +284,8 @@ typedef struct _frame *(*PyThreadFrameGetter)(PyThreadState *self_);
 PyAPI_DATA(PyThreadFrameGetter) _PyThreadState_GetFrame;
 #endif
 
+PyAPI_FUNC(py_time_refcounts_t *) PyState_GetThisThreadPyTimeRefcounts(void);
+
 #ifdef __cplusplus
 }
 #endif

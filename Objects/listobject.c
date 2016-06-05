@@ -12,7 +12,7 @@
 
 Py_LOCAL_INLINE(void) list_lock_new(PyListObject *self)
 {
-    furtex_init(&self->lock);
+    py_recursivelock_init(&self->lock, "list()");
 }
 
 Py_LOCAL_INLINE(void) list_lock_dealloc(PyListObject *self)
@@ -22,7 +22,7 @@ Py_LOCAL_INLINE(void) list_lock_dealloc(PyListObject *self)
 void list_lock(PyListObject *self)
 {
     // printf("%5d: locking %p\n", getpid(), d);
-    furtex_lock(&(self->lock));
+    py_recursivelock_lock(&(self->lock));
     // futex_lock(&(d->ob_base.ob_lock.futex));
     // printf("%5d:  locked %p\n", getpid(), d);
 }
@@ -30,7 +30,7 @@ void list_lock(PyListObject *self)
 void list_unlock(PyListObject *self)
 {
     // printf("%5d:  unlock %p\n", getpid(), d);
-    furtex_unlock(&(self->lock));
+    py_recursivelock_unlock(&(self->lock));
     // futex_unlock(&(d->ob_base.ob_lock.futex));
 }
 
@@ -123,12 +123,13 @@ list_resize(PyListObject *self, Py_ssize_t newsize)
     return 0;
 }
 
-static furtex_t module_furtex = FURTEX_STATIC_INIT("list module lock");
-#define module_lock() furtex_lock(&module_furtex)
-#define module_unlock() furtex_unlock(&module_furtex)
+static py_recursivelock_t module_rlock = PY_RECURSIVELOCK_STATIC_INIT("listobject module lock");
+#define module_lock() py_recursivelock_lock(&module_rlock)
+#define module_unlock() py_recursivelock_unlock(&module_rlock)
 void listobject_lock_stats(void) {
-    furtex_stats(&module_furtex);
+    py_recursivelock_stats(&module_rlock);
 }
+
 
 /* Debug statistic to compare allocations with reuse through the free list */
 #undef SHOW_ALLOC_COUNT

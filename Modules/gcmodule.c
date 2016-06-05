@@ -1592,25 +1592,25 @@ static struct PyModuleDef gcmodule = {
     NULL               /* m_free */
 };
 
-static furtex_t gc_furtex = FURTEX_STATIC_INIT("gc lock");
+static py_recursivelock_t gc_rlock = PY_RECURSIVELOCK_STATIC_INIT("gc lock");
 
 void _gc_lock(const char *file, int line)
 {
-    _furtex_lock(&gc_furtex, file, line);
+    _py_recursivelock_lock(&gc_rlock, file, line);
 }
 
-void _gc_lock2(furtex_t *f2, const char *file, int line)
+void _gc_lock2(py_recursivelock_t *f2, const char *file, int line)
 {
-    if (f2 && (f2 <= &gc_furtex))
-        _furtex_lock(f2, file, line);
-    _furtex_lock(&gc_furtex, file, line);
-    if (f2 > &gc_furtex)
-        _furtex_lock(f2, file, line);
+    if (f2 && (f2 <= &gc_rlock))
+        _py_recursivelock_lock(f2, file, line);
+    _py_recursivelock_lock(&gc_rlock, file, line);
+    if (f2 > &gc_rlock)
+        _py_recursivelock_lock(f2, file, line);
 }
 
 void gc_unlock(void)
 {
-    furtex_unlock(&gc_furtex);
+    py_recursivelock_unlock(&gc_rlock);
 }
 
 PyMODINIT_FUNC
@@ -1653,8 +1653,8 @@ PyInit_gc(void)
     }
 
 #ifdef GC_TRACK_STATS
-    printf("gc_furtex description %s\n", gc_furtex.description);
-    furtex_stats(&gc_furtex);
+    printf("gc_rlock description %s\n", gc_rlock.description);
+    py_recursivelock_stats(&gc_rlock);
 #endif /* GC_TRACK_STATS */
 
 #define ADD_INT(NAME) if (PyModule_AddIntConstant(m, #NAME, NAME) < 0) return NULL
@@ -1753,8 +1753,8 @@ _PyGC_Fini(void)
 {
     Py_CLEAR(callbacks);
 #ifdef GC_TRACK_STATS
-    printf("gc_furtex description %s\n", gc_furtex.description);
-    furtex_stats(&gc_furtex);
+    printf("gc_rlock description %s\n", gc_rlock.description);
+    py_recursivelock_stats(&gc_rlock);
 #endif /* GC_TRACK_STATS */
 }
 

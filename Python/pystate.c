@@ -458,14 +458,17 @@ PyThreadState_Clear(PyThreadState *tstate)
     Py_CLEAR(tstate->coroutine_wrapper);
 }
 
-py_time_refcounts_t* PyState_GetThisThreadPyTimeRefcounts() {
+
+py_time_refcounts_t *
+PyState_GetThisThreadPyTimeRefcounts()
+{
     PyThreadState *tstate = PyGILState_GetThisThreadState();
-    if (tstate) {
-      return &(tstate->py_time_refcounts);
-    } else {
-      return NULL;
-    }
+    if (!tstate)
+        return NULL;
+
+    return &(tstate->py_time_refcounts);
 }
+
 
 /* Common code for PyThreadState_Delete() and PyThreadState_DeleteCurrent() */
 static void

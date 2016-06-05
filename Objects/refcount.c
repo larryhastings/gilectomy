@@ -4,11 +4,6 @@ extern "C" {
 
 #include "object.h"
 
-#define PY_TIME_FETCH_AND_ADD(t, fieldname, delta) \
-    if (t) { t->fieldname += delta; } else {        \
-    __sync_fetch_and_add(&(py_time_refcounts.fieldname), delta); \
-    }
-
 void py_time_refcounts_setzero(py_time_refcounts_t *t) {
 #ifdef PY_TIME_REFCOUNTS
     t->total_refcount_time = 0;
@@ -17,8 +12,6 @@ void py_time_refcounts_setzero(py_time_refcounts_t *t) {
 }
 
 py_time_refcounts_t py_time_refcounts;
-
-py_time_refcounts_t* PyState_GetThisThreadPyTimeRefcounts(void);
 
 void py_time_refcounts_persist(py_time_refcounts_t *t) {
 #ifdef PY_TIME_REFCOUNTS
@@ -71,8 +64,8 @@ void __py_decref__(PyObject *o) {
 
 #endif /* PY_TIME_REFCOUNTS */
 
-void furtex_stats(furtex_t *f) {
-#ifdef FURTEX_WANT_STATS
+void py_recursivelock_stats(py_recursivelock_t *f) {
+#ifdef PY_RECURSIVELOCK_WANT_STATS
     printf("[%s] %ld total locks\n", f->description, (long)(f->no_contention_count + f->contention_count));
     printf("[%s] %ld locks without contention\n", f->description, (long)f->no_contention_count);
     printf("[%s] %ld locks with contention\n", f->description, (long)f->contention_count);
@@ -82,12 +75,12 @@ void furtex_stats(furtex_t *f) {
         printf("[%s] %f contention average delay in cycles\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
         printf("[%s] %ld contention max delay in cycles\n", f->description, (long)f->contention_max_delta);
     }
-    furtex_reset_stats(f);
-#endif /* FURTEX_WANT_STATS */
+    py_recursivelock_reset_stats(f);
+#endif /* PY_RECURSIVELOCK_WANT_STATS */
 }
 
-void futex_stats(futex_t *f) {
-#ifdef FUTEX_WANT_STATS
+void py_lock_stats(py_lock_t *f) {
+#ifdef PY_LOCK_WANT_STATS
     printf("[%s] %ld total locks\n", f->description, (long)(f->no_contention_count + f->contention_count));
     printf("[%s] %ld locks without contention\n", f->description, (long)f->no_contention_count);
     printf("[%s] %ld locks with contention\n", f->description, (long)f->contention_count);
@@ -97,11 +90,7 @@ void futex_stats(futex_t *f) {
         printf("[%s] %f contention average delay in cycles\n", f->description, ((double)f->contention_total_delay) / f->contention_count);
         printf("[%s] %ld contention max delay in cycles\n", f->description, (long)f->contention_max_delta);
     }
-    futex_reset_stats(f);
-/*
-#else
-    printf("[futex stats disabled at compile-time]\n");
-*/
-#endif /* FUTEX_WANT_STATS */
+    py_lock_reset_stats(f);
+#endif /*  PY_LOCK_WANT_STATS */
 }
 

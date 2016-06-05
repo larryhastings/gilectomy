@@ -213,12 +213,14 @@ static int dictresize(PyDictObject *mp, Py_ssize_t minused);
 #ifndef PyDict_MAXFREELIST
 #define PyDict_MAXFREELIST 80
 #endif
-static furtex_t module_furtex = FURTEX_STATIC_INIT("dict module lock");
-#define module_lock() furtex_lock(&module_furtex)
-#define module_unlock() furtex_unlock(&module_furtex)
+
+static py_recursivelock_t module_rlock = PY_RECURSIVELOCK_STATIC_INIT("dict module lock");
+#define module_lock() py_recursivelock_lock(&module_rlock)
+#define module_unlock() py_recursivelock_unlock(&module_rlock)
 void dictobject_lock_stats(void) {
-    furtex_stats(&module_furtex);
+    py_recursivelock_stats(&module_rlock);
 }
+
 static PyDictObject *free_list[PyDict_MAXFREELIST];
 static int numfree = 0;
 
@@ -318,7 +320,7 @@ PyDict_Fini(void)
 
 Py_LOCAL_INLINE(void) dict_lock_new(PyDictObject *d)
 {
-    furtex_init(&d->ma_lock);
+    py_recursivelock_init(&d->ma_lock, "dict()");
 }
 
 Py_LOCAL_INLINE(void) dict_lock_dealloc(PyDictObject *d)
@@ -328,7 +330,7 @@ Py_LOCAL_INLINE(void) dict_lock_dealloc(PyDictObject *d)
 void dict_lock(PyDictObject *d)
 {
     // printf("%5d: locking %p\n", getpid(), d);
-    furtex_lock(&(d->ma_lock));
+    py_recursivelock_lock(&(d->ma_lock));
     // futex_lock(&(d->ob_base.ob_lock.futex));
     // printf("%5d:  locked %p\n", getpid(), d);
 }
@@ -336,7 +338,7 @@ void dict_lock(PyDictObject *d)
 void dict_unlock(PyDictObject *d)
 {
     // printf("%5d:  unlock %p\n", getpid(), d);
-    furtex_unlock(&(d->ma_lock));
+    py_recursivelock_unlock(&(d->ma_lock));
     // futex_unlock(&(d->ob_base.ob_lock.futex));
 }
 

@@ -553,17 +553,23 @@ Py_FinalizeEx(void)
     tstate = PyThreadState_GET();
     interp = tstate->interp;
 
-    furtex_stats(&(((PyDictObject *)interp->builtins)->ma_lock));
-    {
-    extern void tupleobject_lock_stats(void);
-    extern void listobject_lock_stats(void);
-    extern void dictobject_lock_stats(void);
-    // extern furtex_t _malloc_lock;
-    dictobject_lock_stats();
-    listobject_lock_stats();
-    tupleobject_lock_stats();
-    // furtex_stats(&_malloc_lock);
-    }
+    py_recursivelock_stats(&(((PyDictObject *)interp->builtins)->ma_lock));
+
+    #define CALL_EXTERNAL_LOCK_STATS(name) \
+    { \
+    extern void name ## _lock_stats(void); \
+    name ## _lock_stats(); \
+    } \
+
+    CALL_EXTERNAL_LOCK_STATS(collectionsmodule);
+    CALL_EXTERNAL_LOCK_STATS(threadmodule);
+    CALL_EXTERNAL_LOCK_STATS(exceptions);
+    CALL_EXTERNAL_LOCK_STATS(classobject);
+    CALL_EXTERNAL_LOCK_STATS(floatobject);
+    CALL_EXTERNAL_LOCK_STATS(tupleobject);
+    CALL_EXTERNAL_LOCK_STATS(listobject);
+    CALL_EXTERNAL_LOCK_STATS(dictobject);
+    CALL_EXTERNAL_LOCK_STATS(methodobject);
 
     /* Remaining threads (e.g. daemon threads) will automatically exit
        after taking the GIL (in PyEval_RestoreThread()). */
@@ -600,7 +606,11 @@ Py_FinalizeEx(void)
 #endif
     /* Destroy all modules */
     PyImport_Cleanup();
+
+    {
+    extern void py_time_refcounts_stats(void);
     py_time_refcounts_stats();
+    }
 
     /* Flush sys.stdout and sys.stderr (again, in case more was printed) */
     if (flush_std_files() < 0) {
@@ -852,7 +862,7 @@ Py_EndInterpreter(PyThreadState *tstate)
 {
     PyInterpreterState *interp = tstate->interp;
 
-    furtex_stats(&(((PyDictObject *)interp->builtins)->ma_lock));
+    py_recursivelock_stats(&(((PyDictObject *)interp->builtins)->ma_lock));
 
     if (tstate != PyThreadState_GET())
         Py_FatalError("Py_EndInterpreter: thread is not current");

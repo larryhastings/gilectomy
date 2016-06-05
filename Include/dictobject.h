@@ -23,7 +23,7 @@ typedef struct _dictkeysobject PyDictKeysObject;
 typedef struct {
     PyObject_HEAD
     Py_ssize_t ma_used;
-    furtex_t ma_lock;
+    py_recursivelock_t ma_lock;
     PyDictKeysObject *ma_keys;
     PyObject **ma_values;
 } PyDictObject;

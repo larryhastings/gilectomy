@@ -2742,7 +2742,7 @@ slot_tp_del(PyObject *self)
      * never happened.
      */
     {
-        Py_ssize_t refcnt = Py_REFCNT(self);
+        ob_refcnt_t refcnt = Py_REFCNT(self);
         _Py_NewReference(self);
         Py_REFCNT_Initialize(self, refcnt);
     }
