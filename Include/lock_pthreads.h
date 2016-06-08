@@ -69,7 +69,7 @@ Py_LOCAL_INLINE(double) cycle_count_to_seconds(uint64_t cycles) {
 	if (cycles_to_nanoseconds == -1) {
 		mach_timebase_info_data_t sTimebaseInfo;
 		mach_timebase_info(&sTimebaseInfo);
-		to_nano = (double)sTimebaseInfo.numer / (double)sTimebaseInfo.denom;
+		cycles_to_nanoseconds = (double)sTimebaseInfo.numer / (double)sTimebaseInfo.denom;
 	}
 
 	return (cycles * cycles_to_nanoseconds) / 1000000000;
