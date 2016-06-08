@@ -356,6 +356,9 @@ _Py_InitializeEx_Private(int install_sigs, int install_importlib)
     if (!_PyFloat_Init())
         Py_FatalError("Py_Initialize: can't init float");
 
+    if (!_PyBytes_Init())
+        Py_FatalError("Py_Initialize: can't init bytes");
+
     interp->modules = PyDict_New();
     if (interp->modules == NULL)
         Py_FatalError("Py_Initialize: can't make modules dictionary");

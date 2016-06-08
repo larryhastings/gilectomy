@@ -64,7 +64,7 @@ _PyBytes_FromSize(Py_ssize_t size, int use_calloc)
 
     if (size == 0 && (op = nullstring) != NULL) {
 #ifdef COUNT_ALLOCS
-        null_strings++;
+        Py_AtomicInc(&null_strings);
 #endif
         Py_INCREF(op);
         return (PyObject *)op;
@@ -88,7 +88,7 @@ _PyBytes_FromSize(Py_ssize_t size, int use_calloc)
     if (!use_calloc)
         op->ob_sval[size] = '\0';
     /* empty byte string singleton */
-    if (size == 0) {
+    if (size == 0) { /* we should never get here */
         nullstring = op;
         Py_INCREF(op);
     }
@@ -108,7 +108,7 @@ PyBytes_FromStringAndSize(const char *str, Py_ssize_t size)
         (op = characters[*str & UCHAR_MAX]) != NULL)
     {
 #ifdef COUNT_ALLOCS
-        one_strings++;
+        Py_AtomicInc(&one_strings);
 #endif
         Py_INCREF(op);
         return (PyObject *)op;
@@ -122,7 +122,7 @@ PyBytes_FromStringAndSize(const char *str, Py_ssize_t size)
 
     Py_MEMCPY(op->ob_sval, str, size);
     /* share short strings */
-    if (size == 1) {
+    if (size == 1) { /* we should never get here */
         characters[*str & UCHAR_MAX] = op;
         Py_INCREF(op);
     }
@@ -144,14 +144,14 @@ PyBytes_FromString(const char *str)
     }
     if (size == 0 && (op = nullstring) != NULL) {
 #ifdef COUNT_ALLOCS
-        null_strings++;
+        Py_AtomicInc(&null_strings);
 #endif
         Py_INCREF(op);
         return (PyObject *)op;
     }
     if (size == 1 && (op = characters[*str & UCHAR_MAX]) != NULL) {
 #ifdef COUNT_ALLOCS
-        one_strings++;
+        Py_AtomicInc(&one_strings);
 #endif
         Py_INCREF(op);
         return (PyObject *)op;
@@ -3744,12 +3744,49 @@ _PyBytes_Resize(PyObject **pv, Py_ssize_t newsize)
     return 0;
 }
 
+/* The following initializes `nullstring' and `characters' to avoid races
+   caused by lazily computing them.  Effectively, we're pessimizing any
+   programs that don't use empty or single character bytestrings, but it's a
+   one time cost and the upside is thread safety.
+ */
+int
+_PyBytes_Init(void)
+{
+    /* Inline PyObject_NewVar */
+    size_t size;
+    PyBytesObject *op;
+    char str[] = "\0\0";
+    int i;
+
+    size = 0;
+    // Allocate the nullstring.
+    op = (PyBytesObject *)PyObject_Malloc(PyBytesObject_SIZE + size);
+    if (op == NULL)
+       return 0;
+    (void)PyObject_INIT_VAR(op, &PyBytes_Type, size);
+    Py_MEMCPY(op->ob_sval, str, size+1);
+    op->ob_shash = -1;
+    nullstring = op;
+
+    size = 1;
+    // Now we allocate all the 1 byte character strings.
+    op = (PyBytesObject *)PyObject_Calloc(UCHAR_MAX, PyBytesObject_SIZE + size);
+    if (op == NULL)
+       return 0;
+    for(i = 0; i < UCHAR_MAX + 1; ++i, ++op) {
+        str[0] = (char)(i & UCHAR_MAX);
+        (void)PyObject_INIT_VAR(op, &PyBytes_Type, size);
+        Py_MEMCPY(op->ob_sval, str, size+1);
+        op->ob_shash = -1;
+        characters[i] = op;
+    }
+    return 1;
+}
+
 void
 PyBytes_Fini(void)
 {
-    int i;
-    for (i = 0; i < UCHAR_MAX + 1; i++)
-        Py_CLEAR(characters[i]);
+    Py_CLEAR(*characters);
     Py_CLEAR(nullstring);
 }
 
