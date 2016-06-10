@@ -3133,8 +3133,8 @@ PyTypeObject PyDict_Type = {
 
     0, /* tp_finalize */
 
-    (lockfunc)dict_lock, /* tp_rlock */
-    (lockfunc)dict_unlock, /* tp_runlock */
+    (lockfunc)dict_lock, /* tp_lock */
+    (lockfunc)dict_unlock, /* tp_unlock */
 
 };
 
@@ -4206,7 +4206,9 @@ _PyObjectDict_SetItem(PyTypeObject *tp, PyObject **dictptr,
             if (cached != ((PyDictObject *)dict)->ma_keys) {
                 /* Either update tp->ht_cached_keys or delete it */
                 if (cached->dk_refcnt == 1) {
+                    dict_lock(dict);
                     CACHED_KEYS(tp) = make_keys_shared(dict);
+                    dict_unlock(dict);
                 } else {
                     CACHED_KEYS(tp) = NULL;
                 }
