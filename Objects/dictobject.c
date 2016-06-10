@@ -831,7 +831,7 @@ _PyDict_HasOnlyStringKeys(PyObject *dict)
            lookup routine for that, so put it there, but keep in mind that split and combined
            dictionaries have different lookup routines. */
         ((PyDictObject *)dict)->ma_keys->dk_lookup = 
-            ((PyDictObject* dict)->ma_values == NULL) ? lookdict_unicode : lookdict_split;
+            (((PyDictObject*) dict)->ma_values == NULL) ? lookdict_unicode : lookdict_split;
     }
     dict_unlock((PyDictObject *)dict);
     return status;
@@ -4206,9 +4206,9 @@ _PyObjectDict_SetItem(PyTypeObject *tp, PyObject **dictptr,
             if (cached != ((PyDictObject *)dict)->ma_keys) {
                 /* Either update tp->ht_cached_keys or delete it */
                 if (cached->dk_refcnt == 1) {
-                    dict_lock(dict);
+                    dict_lock((PyDictObject *)dict);
                     CACHED_KEYS(tp) = make_keys_shared(dict);
-                    dict_unlock(dict);
+                    dict_unlock((PyDictObject *)dict);
                 } else {
                     CACHED_KEYS(tp) = NULL;
                 }

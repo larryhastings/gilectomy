@@ -255,6 +255,7 @@ Py_LOCAL_INLINE(void) py_recursivelock_reset_stats(py_recursivelock_t *recursive
 }
 
 Py_LOCAL_INLINE(int) py_recursivelock_owned_by_me(py_recursivelock_t *recursivelock) {
+    threadid_t tid = CURRENT_THREAD_ID;
     return (recursivelock->count && ARE_THREADS_EQUAL(recursivelock->tid, tid));
 }
 
