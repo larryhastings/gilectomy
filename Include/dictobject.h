@@ -24,6 +24,8 @@ typedef struct {
     PyObject_HEAD
     Py_ssize_t ma_used;
     py_recursivelock_t ma_lock;
+    py_lock_t ma_readerlock;
+    unsigned int ma_readercount;
     PyDictKeysObject *ma_keys;
     PyObject **ma_values;
 } PyDictObject;
