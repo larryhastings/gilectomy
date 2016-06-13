@@ -143,6 +143,10 @@ PyAPI_FUNC(PyVarObject *) _PyObject_NewVar(PyTypeObject *, Py_ssize_t);
 
 #define _PyObject_SIZE(typeobj) ( (typeobj)->tp_basicsize )
 
+#ifndef Py_LIMITED_API
+PyAPI_FUNC(void) _Py_ObMalloc_Init(void);
+#endif
+
 /* _PyObject_VAR_SIZE returns the number of bytes (as size_t) allocated for a
    vrbl-size object with nitems items, exclusive of gc overhead (if any).  The
    value is rounded up to the closest multiple of sizeof(void *), in order to
