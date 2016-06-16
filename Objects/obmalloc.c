@@ -958,6 +958,17 @@ static size_t narenas_highwater = 0;
 
 static Py_ssize_t _Py_AllocatedBlocks = 0;
 
+void
+_Py_ObMalloc_Init(void)
+{
+    int i;
+
+    for (i = 0; i < NB_SMALL_SIZE_CLASSES; i++) {
+        py_lock_init(&_pool_locks[i], "obmalloc pool lock");
+    }
+}
+
+
 Py_ssize_t
 _Py_GetAllocatedBlocks(void)
 {
