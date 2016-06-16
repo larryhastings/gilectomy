@@ -407,6 +407,18 @@ PyList_Append(PyObject *op, PyObject *newitem)
 
 /* Methods */
 
+static PyObject* list_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
+{
+    PyListObject *list;
+
+    list = (PyListObject*)PyType_GenericNew(type, args, kwds);
+    if (list == NULL)
+        return NULL;
+
+    py_nativelock_init(&list->lock.lock.nativelock);
+    return (PyObject*) list;
+}
+
 static void
 list_dealloc(PyListObject *op)
 {
@@ -2939,7 +2951,7 @@ PyTypeObject PyList_Type = {
     0,                                          /* tp_dictoffset */
     (initproc)list_init,                        /* tp_init */
     PyType_GenericAlloc,                        /* tp_alloc */
-    PyType_GenericNew,                          /* tp_new */
+    list_new,                                   /* tp_new */
     PyObject_GC_Del,                            /* tp_free */
 
 

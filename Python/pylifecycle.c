@@ -318,6 +318,8 @@ _Py_InitializeEx_Private(int install_sigs, int install_importlib)
     _PyRandom_Init();
     py_time_refcounts_setzero(&py_time_refcounts);
 
+    _Py_ObMalloc_Init();
+
     interp = PyInterpreterState_New();
     if (interp == NULL)
         Py_FatalError("Py_Initialize: can't make first interpreter");

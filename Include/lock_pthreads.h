@@ -16,32 +16,21 @@ typedef pthread_t threadid_t;
 
 
 typedef struct py_nativelock_t {
-	// An initialized flag is need because some futexes
-	// are 0-initialized
-	// e.g. list instances created via PyType_GenericNew
-	int initialized;
 	pthread_mutex_t mutex;
 } py_nativelock_t;
 
 #define PY_NATIVELOCK_T py_nativelock_t
 
-#define PY_NATIVELOCK_STATIC_INIT() {1, PTHREAD_MUTEX_INITIALIZER}
+#define PY_NATIVELOCK_STATIC_INIT() {PTHREAD_MUTEX_INITIALIZER}
 
 
 Py_LOCAL_INLINE(void) py_nativelock_init(PY_NATIVELOCK_T *nativelock) {
-	if (!nativelock->initialized) {
-		pthread_mutex_init(&(nativelock->mutex), NULL);
-		nativelock->initialized = 1;
-	}
+	pthread_mutex_init(&(nativelock->mutex), NULL);
 }
 
 
 Py_LOCAL_INLINE(void) py_nativelock_lock(PY_NATIVELOCK_T *nativelock) {
 	int r;
-
-	if (!nativelock->initialized) {
-		py_nativelock_init(nativelock);
-	}
 
 	r = pthread_mutex_lock(&(nativelock->mutex));
 	if (r != 0) {
@@ -69,7 +58,7 @@ Py_LOCAL_INLINE(double) cycle_count_to_seconds(uint64_t cycles) {
 	if (cycles_to_nanoseconds == -1) {
 		mach_timebase_info_data_t sTimebaseInfo;
 		mach_timebase_info(&sTimebaseInfo);
-		to_nano = (double)sTimebaseInfo.numer / (double)sTimebaseInfo.denom;
+		cycles_to_nanoseconds = (double)sTimebaseInfo.numer / (double)sTimebaseInfo.denom;
 	}
 
 	return (cycles * cycles_to_nanoseconds) / 1000000000;
