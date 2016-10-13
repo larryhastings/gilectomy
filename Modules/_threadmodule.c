@@ -185,8 +185,8 @@ lock_PyThread_release_lock(lockobject *self)
         return NULL;
     }
 
-    PyThread_release_lock(self->lock_lock);
     self->locked = 0;
+    PyThread_release_lock(self->lock_lock);
     Py_INCREF(Py_None);
     return Py_None;
 }
