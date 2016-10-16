@@ -373,6 +373,16 @@ PyAPI_FUNC(void) PyObject_GC_Del(void *);
         }                                                               \
     } while (0)
 
+#define Py_VISIT_UNLOCK(op, unlockfn, unlockarg)                        \
+    do {                                                                \
+        if (op) {                                                       \
+            int vret = visit((PyObject *)(op), arg);                    \
+            if (vret) {                                                 \
+                (unlockfn)(unlockarg);                                  \
+                return vret;                                            \
+            }                                                           \
+        }                                                               \
+    } while (0)
 
 /* Test if a type supports weak references */
 #define PyType_SUPPORTS_WEAKREFS(t) ((t)->tp_weaklistoffset > 0)
